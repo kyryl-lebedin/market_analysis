@@ -163,24 +163,9 @@ def process_json_file(
     """
     # Read the input JSON file
     with open(input_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        jobs_data = json.load(f)
 
-    # Handle different JSON structures
-    if isinstance(data, dict):
-        # If it's a dictionary, check if it has a 'results' key (Adzuna API format)
-        if "results" in data:
-            jobs_data = data["results"]
-            print(f"Loaded {len(jobs_data)} jobs from {input_file} (Adzuna API format)")
-        else:
-            # If it's a dictionary without 'results', treat it as a single job
-            jobs_data = [data]
-            print(f"Loaded 1 job from {input_file} (single job format)")
-    elif isinstance(data, list):
-        # If it's already a list, use it directly
-        jobs_data = data
-        print(f"Loaded {len(jobs_data)} jobs from {input_file} (list format)")
-    else:
-        raise ValueError(f"Unexpected data format in {input_file}")
+    print(f"Loaded {len(jobs_data)} jobs from {input_file}")
 
     # Add home URLs
     updated_jobs = add_home_urls_to_jobs(jobs_data, delay=delay)
