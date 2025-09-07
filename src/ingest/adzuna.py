@@ -10,6 +10,7 @@ ADZUNA_ID = os.getenv("ADZUNA_ID")
 ADZUNA_KEY = os.getenv("ADZUNA_KEY")
 
 
+# api client
 class AdzunaAPI:
     """Adzuna API client for job search"""
 
@@ -22,62 +23,83 @@ class AdzunaAPI:
         if not self.app_id or not self.app_key:
             raise ValueError("No ADZUNA creds set.")
 
+    # fetches jobs and returns messy dict
     def search_jobs(
         self,
         country: str = "us",
-        location: Optional[str] = None,
-        keywords: Optional[str] = None,
         category: Optional[str] = None,
-        results_per_page: int = 20,
+        results_per_page: int = 50,
         page: int = 1,
-        salary_min: Optional[int] = None,
-        salary_max: Optional[int] = None,
-        sort_by: str = "relevance",
+        pages: int = None,  # fetch specific number of pages
+        sort_by: str = None,
+        what_or: str = None,
+        what_and: str = None,
+        all_jobs: bool = False,
+        formated: bool = False,
     ) -> Dict[str, Any]:
-        """Search for jobs using the Adzuna API.
-
-        Args:
-            country: Country code (e.g., 'us', 'gb', 'ca', 'au')
-            location: Location to search in (e.g., 'New York', 'London')
-            keywords: Job keywords to search for
-            category: Job category (e.g., 'it-jobs', 'sales-jobs')
-            results_per_page: Number of results per page (max 50)
-            page: Page number to retrieve
-            salary_min: Minimum salary filter
-            salary_max: Maximum salary filter
-            sort_by: Sort results by ('relevance', 'date', 'salary')
-
-        Returns:
-            Dictionary containing job search results
-        """
-
-        endpoint = f"{self.base_url}/jobs/{country}/search/{page}"
 
         params = {
             "app_id": self.app_id,
             "app_key": self.app_key,
-            "results_per_page": min(results_per_page, 50),  # gotta figure that part out
-            "sort_by": sort_by,
+            "results_per_page": min(results_per_page, 50),
         }
 
-        # optional parameters
-        if location:
-            params["where"] = location
+        if what_or:
+            params["what_or"] = what_or
 
-        if keywords:
-            params["what"] = keywords
+        if what_and:
+            params["what_and"] = what_and
+
+        if sort_by:
+            params["sort_by"] = sort_by
+
         if category:
             params["category"] = category
-        if salary_min:
-            params["salary_min"] = salary_min
-        if salary_max:
-            params["salary_max"] = salary_max
 
+        # handle different ways to fetch jobs
+        multiple = True if (all_jobs or pages) else False
+        results = []
+
+        if all_jobs:
+            total = False
+            results = []
+            page_i = 1
+            while True:
+                endpoint = f"{self.base_url}/jobs/{country}/search/{page_i}"
+                result = self._fetch_single_page(endpoint, params)
+
+                # calcualte total number of pages in result
+                if not total:
+                    total = result.get("count", []) // 50 + (
+                        1 if result.get("count", []) % 50 else 0
+                    )
+
+                if not result.get("results", []):
+                    break
+                print(f"{page_i}/{total}")
+                results.append(result)
+                page_i += 1
+        elif pages:
+            results = []
+            for i in range(1, pages + 1):
+                endpoint = f"{self.base_url}/jobs/{country}/search/{i}"
+                results.append(self._fetch_single_page(endpoint, params))
+        else:  # case with single page
+            endpoint = f"{self.base_url}/jobs/{country}/search/{page}"
+            results.append(self._fetch_single_page(endpoint, params))
+
+        # format results if needed and return final
+        return self._process_job_results(results, multiple) if formated else results
+
+    def _fetch_single_page(self, endpoint: str, params: Dict[str, Any]):
         try:
-
             response = requests.get(endpoint, params=params, timeout=30)
             response.raise_for_status()
+
             return response.json()  # return our desired info
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP Error: {e}")
+            return {"error": str(e)}
         except requests.exceptions.RequestException as e:
             print(f"Error making request to Adzuna API: {e}")
             return {
@@ -87,43 +109,44 @@ class AdzunaAPI:
             print(f"Error parsing JSON response: {e}")
             return {"error": "Invalid JSON response"}
 
-    def process_job_results(self, results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    # clean data for json or printing
+    def _process_job_results(
+        self, results: List[Dict[str, Any]], multiple: bool = False
+    ) -> List[Dict[str, Any]]:
         """Turn messy API dict result into list with clean dict"""
 
         if "error" in results:
             return []
 
-        jobs = results.get("results", [])
-        processed_jobs = []
+        all_results = []
 
-        for job in jobs:
-            # cleaning method
-            processed_job = {
-                "id": job.get("id"),
-                "title": job.get("title"),
-                "company": job.get("company", {}).get("display_name"),
-                "location": job.get("location", {}).get("display_name"),
-                "description": job.get("description"),
-                "salary_min": job.get("salary_min"),
-                "salary_max": job.get("salary_max"),
-                "salary_currency": job.get("salary_currency"),
-                "created": job.get("created"),
-                "redirect_url": job.get("redirect_url"),
-                "category": job.get("category", {}).get("label"),
-                "contract_type": job.get("contract_type"),
-                "contract_time": job.get("contract_time"),
-            }
-            processed_jobs.append(processed_job)
+        if multiple:
+            for result in results:
+                jobs = result.get("results", [])
+                processed_jobs = []
 
-        return processed_jobs
-
-    def print_jobs(self, jobs: List[Dict[str, Any]]):
-        for job in jobs:
-            print(f"Title: {job['title']}")
-            print(f"Company: {job['company']}")
-            print(f"Location: {job['location']}")
-            print(f"Description: {job['description']}")
-            print(f"Redirect URL: {job['redirect_url']}")
+                for job in jobs:
+                    # cleaning method
+                    processed_job = {
+                        "id": job.get("id"),
+                        "title": job.get("title"),
+                        "company": job.get("company", {}).get("display_name"),
+                        "location": job.get("location", {}).get("display_name"),
+                        "description": job.get("description"),
+                        "salary_min": job.get("salary_min"),
+                        "salary_max": job.get("salary_max"),
+                        "salary_currency": job.get("salary_currency"),
+                        "created": job.get("created"),
+                        "redirect_url": job.get("redirect_url"),
+                        "category": job.get("category", {}).get("label"),
+                        "contract_type": job.get("contract_type"),
+                        "contract_time": job.get("contract_time"),
+                    }
+                    processed_jobs.append(processed_job)
+                all_results += processed_jobs
+            return all_results
+        else:
+            return results
 
     def save_jobs_to_file(
         self, results: List[Dict[str, Any]], filename: str = None
@@ -147,17 +170,19 @@ class AdzunaAPI:
         return filepath
 
 
+# script logic, calls the API client
 def main():
     try:
         api = AdzunaAPI()
 
-        results = api.search_jobs(country="gb", keywords="data", results_per_page=10)
+        results = api.search_jobs(
+            country="gb",
+            # formated=True,
+            all_jobs=True,
+            what_and="Data Careers,Residential,Must,4 years",
+        )
 
-        processed_jobs = api.process_job_results(results)
-
-        # api.print_jobs(processed_jobs)
-
-        api.save_jobs_to_file(processed_jobs)
+        api.save_jobs_to_file(results)
 
     except Exception as e:
         print(f"Error: {e}")
