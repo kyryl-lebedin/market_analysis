@@ -1,4 +1,8 @@
 .env
-.venv
+/data/
+.venv/
+
+
+
+# git config core.excludesfile .gitignore.local
 .gitignore.local
-/data
