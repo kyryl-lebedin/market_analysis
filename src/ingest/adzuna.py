@@ -120,33 +120,30 @@ class AdzunaAPI:
 
         all_results = []
 
-        if multiple:
-            for result in results:
-                jobs = result.get("results", [])
-                processed_jobs = []
+        for result in results:
+            jobs = result.get("results", [])
+            processed_jobs = []
 
-                for job in jobs:
-                    # cleaning method
-                    processed_job = {
-                        "id": job.get("id"),
-                        "title": job.get("title"),
-                        "company": job.get("company", {}).get("display_name"),
-                        "location": job.get("location", {}).get("display_name"),
-                        "description": job.get("description"),
-                        "salary_min": job.get("salary_min"),
-                        "salary_max": job.get("salary_max"),
-                        "salary_currency": job.get("salary_currency"),
-                        "created": job.get("created"),
-                        "redirect_url": job.get("redirect_url"),
-                        "category": job.get("category", {}).get("label"),
-                        "contract_type": job.get("contract_type"),
-                        "contract_time": job.get("contract_time"),
-                    }
-                    processed_jobs.append(processed_job)
-                all_results += processed_jobs
-            return all_results
-        else:
-            return results
+            for job in jobs:
+                # cleaning method
+                processed_job = {
+                    "id": job.get("id"),
+                    "title": job.get("title"),
+                    "company": job.get("company", {}).get("display_name"),
+                    "location": job.get("location", {}).get("display_name"),
+                    "description": job.get("description"),
+                    "salary_min": job.get("salary_min"),
+                    "salary_max": job.get("salary_max"),
+                    "salary_currency": job.get("salary_currency"),
+                    "created": job.get("created"),
+                    "redirect_url": job.get("redirect_url"),
+                    "category": job.get("category", {}).get("label"),
+                    "contract_type": job.get("contract_type"),
+                    "contract_time": job.get("contract_time"),
+                }
+                processed_jobs.append(processed_job)
+            all_results += processed_jobs
+        return all_results
 
     def save_jobs_to_file(
         self, results: List[Dict[str, Any]], filename: str = None
@@ -177,12 +174,15 @@ def main():
 
         results = api.search_jobs(
             country="gb",
-            # formated=True,
-            all_jobs=True,
+            formated=True,
+            # category="it-jobs",
+            # all_jobs=True,
             what_and="Data Careers,Residential,Must,4 years",
+            results_per_page=10,
+            page=3,
         )
 
-        api.save_jobs_to_file(results)
+        api.save_jobs_to_file(results, "test.json")
 
     except Exception as e:
         print(f"Error: {e}")
