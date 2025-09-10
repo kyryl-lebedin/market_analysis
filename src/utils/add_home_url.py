@@ -5,9 +5,27 @@ import json
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 from datetime import datetime
+from weakref import proxy
 import requests
 import time
 import random
+import uuid
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BD_HOST = os.getenv("BD_HOST")
+BD_PORT = int(os.getenv("BD_PORT"))
+BD_USERNAME_BASE = os.getenv("BD_USERNAME_BASE")
+BD_PASSWORD = os.getenv("BD_PASSWORD")
+BD_COUNTRY = os.getenv("BD_COUNTRY")
+CERT_PATH = "../../certs/BrightData_SSL_certificate_(port 33335).crt"
+
+
+def get_proxies(random: bool = True):
+    user = f"{BD_USERNAME_BASE}-session-{uuid.uuid4().hex}"
+    proxy_url = f"http://{user}:{BD_PASSWORD}@{BD_HOST}:{BD_PORT}"
+    return {"http": proxy_url, "https": proxy_url}
 
 
 def get_home_url(
@@ -33,8 +51,17 @@ def get_home_url(
                 "Cache-Control": "max-age=0",
             }
 
+            script_dir = Path(__file__).parent
+            certificate = script_dir / CERT_PATH
+            proxies = get_proxies()
+
             response = session.get(
-                redirect_url, headers=headers, timeout=timeout, allow_redirects=True
+                redirect_url,
+                headers=headers,
+                timeout=timeout,
+                proxies=proxies,
+                allow_redirects=True,
+                verify=certificate,
             )
 
             content = response.text
@@ -151,11 +178,7 @@ def main():
         raise SystemExit("Correct usage: python add_home_url.py [input_file]")
 
     try:
-        output_file_dir = file_add_home_urls(
-            input_file,
-            delay=1.5,
-            save_rate=50,
-        )
+        output_file_dir = file_add_home_urls(input_file, delay=1.5, save_rate=5)
         print(f"Final dataset is saved into {output_file_dir}")
     except Exception as e:
         print(f"Error in main processing function: {e}")
