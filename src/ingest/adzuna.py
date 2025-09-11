@@ -3,6 +3,7 @@ import os, requests, json, datetime
 from dotenv import load_dotenv
 from typing import Dict, List, Optional, Any
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv()
 
@@ -34,6 +35,7 @@ class AdzunaAPI:
         sort_by: str = None,
         what_or: str = None,
         what_and: str = None,
+        max_workers: int = None,
         all_jobs: bool = False,
         formated: bool = False,
     ) -> Dict[str, Any]:
@@ -60,6 +62,48 @@ class AdzunaAPI:
         multiple = True if (all_jobs or pages) else False
         results = []
 
+        # we don't know at this point what count, so we just keep count of how many have we done already
+        if max_workers:
+
+            folder = f"{what_or}_{what_and}_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}"
+            os.makedirs(
+                f"data/raw/{folder}",
+                exist_ok=True,
+            )
+
+            job_counter = 0
+            batch_num = 0
+
+            page = 1
+            num_per_batch = results_per_page * max_workers
+            while True:
+                job_counter += num_per_batch
+
+                # run workers starting at page
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    batch = executor.map(
+                        self._fetch_single_page,
+                        [
+                            f"{self.base_url}/jobs/{country}/search/{p}"
+                            for p in range(page, page + max_workers)
+                        ],
+                        [params for i in range(max_workers)],
+                        [p for p in range(page, page + max_workers)],
+                    )
+                    batch = list(batch)
+
+                    batch = self._process_job_results(batch)
+                    if not batch:
+                        break
+                    # print(batch)
+                    self.save_jobs_to_file(
+                        batch,
+                        f"{folder}/batch_{batch_num}_{num_per_batch}({job_counter}).json",
+                    )
+
+                batch_num += 1
+                page += max_workers
+
         if all_jobs:
             total = False
             results = []
@@ -84,14 +128,17 @@ class AdzunaAPI:
             for i in range(1, pages + 1):
                 endpoint = f"{self.base_url}/jobs/{country}/search/{i}"
                 results.append(self._fetch_single_page(endpoint, params))
+                print(f"{i}/{pages}")
         else:  # case with single page
             endpoint = f"{self.base_url}/jobs/{country}/search/{page}"
             results.append(self._fetch_single_page(endpoint, params))
 
         # format results if needed and return final
-        return self._process_job_results(results, multiple) if formated else results
+        return self._process_job_results(results) if formated else results
 
-    def _fetch_single_page(self, endpoint: str, params: Dict[str, Any]):
+    def _fetch_single_page(
+        self, endpoint: str, params: Dict[str, Any], page: int = None
+    ):
         try:
             response = requests.get(endpoint, params=params, timeout=30)
             response.raise_for_status()
@@ -99,6 +146,7 @@ class AdzunaAPI:
             return response.json()  # return our desired info
         except requests.exceptions.HTTPError as e:
             print(f"HTTP Error: {e}")
+            print(f"page: {page}")
             return {"error": str(e)}
         except requests.exceptions.RequestException as e:
             print(f"Error making request to Adzuna API: {e}")
@@ -111,12 +159,13 @@ class AdzunaAPI:
 
     # clean data for json or printing
     def _process_job_results(
-        self, results: List[Dict[str, Any]], multiple: bool = False
+        self, results: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """Turn messy API dict result into list with clean dict"""
 
-        if "error" in results:
-            return []
+        for result in results:
+            if "error" in result:
+                continue
 
         all_results = []
 
@@ -167,6 +216,15 @@ class AdzunaAPI:
         return filepath
 
 
+what_or_extensive_data = "data scientist,data science,data engineer,data engineering,big data engineer,data platform engineer,data platform,data architect,analytics engineer,data analyst,data analytics,business intelligence,bi analyst,bi developer,data visualization,data visualisation,analytics consultant,data science consultant,etl developer,etl engineer,sql developer,data warehouse engineer,data warehousing,dwh engineer,data modeler,data modeller,data quality engineer,data quality analyst,data governance,data steward,data ops,dataops,streaming data engineer,streaming engineer,kafka engineer,spark engineer,pyspark developer,databricks engineer,snowflake engineer,snowflake developer,dbt developer,machine learning engineer,ml engineer,ai engineer,ai developer,mlops engineer,ml ops,model ops,modelops,ml platform engineer,machine learning platform engineer,ml infrastructure engineer,research engineer,applied scientist,ai scientist,ml scientist,nlp engineer,natural language processing,nlp scientist,computer vision engineer,computer vision,cv engineer,speech recognition,speech engineer,audio ml engineer,deep learning engineer,deep learning,reinforcement learning,recommendation systems engineer,recommender systems,personalization engineer,information retrieval engineer,search engineer,relevance engineer,ranking engineer,generative ai,genai,large language models,llm engineer,llm developer,prompt engineer,prompt engineering,knowledge graph engineer,graph machine learning,quantitative analyst,quant analyst,decision scientist,product data scientist,insights analyst,statistician,time series analyst,forecasting analyst"
+what_or_core_data = "data scientist,data engineer,machine learning,ai"
+
+what_and_680 = "cat, or,and,in,of,it"
+what_and_1411 = "cat,ll"
+
+# write the wrapper extractor that would implement multiple threads
+
+
 # script logic, calls the API client
 def main():
     try:
@@ -177,12 +235,14 @@ def main():
             formated=True,
             # category="it-jobs",
             # all_jobs=True,
-            what_and="Data Careers,Residential,Must,4 years",
-            results_per_page=10,
-            page=3,
+            what_or=what_or_core_data,
+            # what_and=what_and_1411,
+            results_per_page=50,
+            # pages=3,
+            max_workers=3,
         )
 
-        api.save_jobs_to_file(results, "test.json")
+        # api.save_jobs_to_file(results, "filename")
 
     except Exception as e:
         print(f"Error: {e}")
