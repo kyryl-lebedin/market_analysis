@@ -1,8 +1,10 @@
 .env
 /data/
 .venv/
+.conda-env
 /certs/
-
+*.pyc
+/logs
 
 # git config core.excludesfile .gitignore.local
 .gitignore.local

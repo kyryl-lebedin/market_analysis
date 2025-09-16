@@ -8,5 +8,7 @@
         ".gitignore": true,
         "certs": true,
         ".gitignore.local": true,
+        ".conda-env": true,
+        "**/__pycache__": true,
     }
 }
