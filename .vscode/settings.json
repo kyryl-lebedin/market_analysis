@@ -1,0 +1,12 @@
+{
+    "files.exclude": {
+        "**/.git": true,
+        "**/.vscode": true,
+        "**/.venv": true,
+        ".env": true,
+        ".env.example": true,
+        ".gitignore": true,
+        "certs": true,
+        ".gitignore.local": true,
+    }
+}
