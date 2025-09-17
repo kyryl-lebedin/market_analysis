@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from typing import Dict, List, Optional, Any
 from concurrent.futures import ThreadPoolExecutor
 import logging
+import pandas as pd
 
 import sys
 from pathlib import Path
@@ -24,11 +25,14 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 load_dotenv()
 
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+LOGS_DIR = PROJECT_ROOT / "logs"
 
 from adzuna_api_configs import ADZUNA_API_PRESETS
 
 
-def configure_logging(level="INFO", log_folder="logs", log_file="adzuna_api.log"):
+def configure_logging(level="INFO", log_file="adzuna_api.log"):
     """
     Configures logging for the application.
 
@@ -38,8 +42,8 @@ def configure_logging(level="INFO", log_folder="logs", log_file="adzuna_api.log"
         log_file: Name of the log file
     """
 
-    os.makedirs(log_folder, exist_ok=True)
-    log_path = os.path.join(log_folder, log_file)
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOGS_DIR / log_file
 
     logging.basicConfig(
         level=getattr(logging, level),
@@ -47,6 +51,9 @@ def configure_logging(level="INFO", log_folder="logs", log_file="adzuna_api.log"
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler(), logging.FileHandler(log_path, "a")],
     )
+
+
+configure_logging()
 
 
 class AdzunaAPI:
@@ -298,35 +305,70 @@ class AdzunaAPI:
                 }
                 processed_jobs.append(processed_job)
             all_results += processed_jobs
+
         return all_results
 
     def save_jobs_to_file(
-        self, results: List[Dict[str, Any]], filename: str = None
+        self,
+        results: List[Dict[str, Any]],
+        filename: str = None,
+        output_type: str = "parquet",
     ) -> str:
         """
-        Saves processed job results to a JSON file.
+        Saves processed job results to a JSON or Parquet file.
 
         Args:
             results: List of job dictionaries to save.
             filename: Optional custom filename for the saved file.
+            output_type: File format ("json" or "parquet").
 
         Returns:
             Path to the saved file.
+
+        Raises:
+            ValueError: If results is not a list or output_type is unsupported
+            IOError: If file writing fails
         """
 
+        # Input validation
+        if not isinstance(results, list):
+            raise ValueError("Results must be a list of dictionaries")
+
+        if output_type not in ["json", "parquet"]:
+            raise ValueError("output_type must be 'json' or 'parquet'")
+
+        if output_type == "parquet" and not hasattr(pd, "DataFrame"):
+            raise ValueError("pandas is required for parquet output")
+
+        # if no filename is provided, create a default one
         if not filename:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{len(results)}_adzuna_jobs_{timestamp}.json"
+            if output_type == "json":
+                filename = f"{len(results)}_adzuna_jobs_{timestamp}.json"
+            elif output_type == "parquet":
+                filename = f"{len(results)}_adzuna_jobs_{timestamp}.parquet"
 
-        os.makedirs("data/raw", exist_ok=True)
-        filepath = os.path.join("data/raw", filename)
+        raw_data_dir = DATA_DIR / "raw"
+        raw_data_dir.mkdir(parents=True, exist_ok=True)
+        filepath = raw_data_dir / filename
 
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False)
+        # save the results to the file
+        try:
+            if output_type == "json":
+                with open(filepath, "w", encoding="utf-8") as f:
+                    json.dump(results, f, indent=2, ensure_ascii=False)
+            elif output_type == "parquet":
+                df = pd.DataFrame(results)
 
-        print(f"Results saved to {filepath}")
+                df.to_parquet(filepath)
 
-        return filepath
+            print(f"Results saved to {filepath}")
+            return filepath
+
+        except IOError as e:
+            raise IOError(f"Failed to save file {filepath}: {e}")
+        except Exception as e:
+            raise Exception(f"Unexpected error saving file {filepath}: {e}")
 
 
 def main():
@@ -338,12 +380,12 @@ def main():
     config = ADZUNA_API_PRESETS["test_multithread_1411"]
     results, page_error_list = api.search_jobs(**config)
     log.info(f"Page error list: {page_error_list}")
-    api.save_jobs_to_file(results)
+    api.save_jobs_to_file(results, output_type="parquet")
 
 
 if __name__ == "__main__":
     try:
-        configure_logging()  # maybe transfer outside in open namespace
+
         main()
     except Exception as e:
         log.error(f"Error: {e}")
