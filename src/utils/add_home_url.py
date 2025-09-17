@@ -1,188 +1,205 @@
-import re
-import sys
-import os
-import json
-from typing import Dict, List, Any, Optional
+from concurrent.futures import ThreadPoolExecutor
+import logging
 from pathlib import Path
-from datetime import datetime
-from weakref import proxy
-import requests
-import time
-import random
-import uuid
+import pandas as pd
+import os
 from dotenv import load_dotenv
+from typing import Dict, List, Any, Optional
+import requests
+import uuid
+import re
 
+# load environment variables
 load_dotenv()
 
-BD_HOST = os.getenv("BD_HOST")
-BD_PORT = int(os.getenv("BD_PORT"))
-BD_USERNAME_BASE = os.getenv("BD_USERNAME_BASE")
-BD_PASSWORD = os.getenv("BD_PASSWORD")
-BD_COUNTRY = os.getenv("BD_COUNTRY")
-CERT_PATH = "../../certs/BrightData_SSL_certificate_(port 33335).crt"
+
+# intialize directories
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+LOGS_DIR = PROJECT_ROOT / "logs"
+RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
+URL_DATA_DIR = PROJECT_ROOT / "data" / "url"
+CERT_PATH = PROJECT_ROOT / "certs" / "BrightData_SSL_certificate_(port 33335).crt"
 
 
-def get_proxies(random: bool = True):
-    user = f"{BD_USERNAME_BASE}-session-{uuid.uuid4().hex}"
-    proxy_url = f"http://{user}:{BD_PASSWORD}@{BD_HOST}:{BD_PORT}"
-    return {"http": proxy_url, "https": proxy_url}
+# set up logging
+log = logging.getLogger(__name__)
 
 
-def get_home_url(
-    redirect_url: str, max_redirects: int = 10, timeout: int = 15
-) -> Optional[str]:
-    if "/land/" in redirect_url:
+def configure_logging(level="INFO", log_file="add_home_url_adzuna.log"):
+    """
+    Configures logging for the application.
 
-        try:
-            session = requests.Session()
-            session.max_redirects = max_redirects
+    Args:
+        level: Logging level (e.g., "INFO", "DEBUG", "WARNING")
+        log_folder: Directory to save log files
+        log_file: Name of the log file
+    """
 
-            # sessioin setup
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Connection": "keep-alive",  # not sure about this one
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Cache-Control": "max-age=0",
-            }
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOGS_DIR / log_file
 
-            script_dir = Path(__file__).parent
-            certificate = script_dir / CERT_PATH
-            proxies = get_proxies()
-
-            response = session.get(
-                redirect_url,
-                headers=headers,
-                timeout=timeout,
-                proxies=proxies,
-                allow_redirects=True,
-                verify=certificate,
-            )
-
-            content = response.text
-
-            # check for meta refresh redirects
-            meta_refresh_match = re.search(
-                r'<meta[^>]*http-equiv=["\']?refresh["\']?[^>]*content=["\']?\d+;\s*url=([^"\'>\s]+)',
-                content,
-                re.IGNORECASE,
-            )
-            if meta_refresh_match:
-                redirect_url = meta_refresh_match.group(1)
-                return redirect_url
-
-            # potentially can implement other methods as well, if needed
-
-        except Exception as e:
-            print(f"Error trying to obtain home url for {redirect_url}: {e}")
-
-    else:
-        return redirect_url
-
-
-# returns json with home urls
-# rewrite as genreator
-def json_add_home_urls(
-    data: List[Dict[str, Any]],
-    delay: float = 1.0,
-    save_rate: int = None,
-) -> List[Dict[str, Any]]:
-    # will update jobs in place
-    updated_jobs = data.copy()
-    jobs_num = len(data)
-    if not save_rate:
-        save_rate = jobs_num
-
-    print(
-        f"Total number of jobs: {jobs_num} \n Each copy will have such amount of jobs: {save_rate}"
+    logging.basicConfig(
+        level=getattr(logging, level),
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.StreamHandler(), logging.FileHandler(log_path, "a")],
     )
 
-    count = save_rate
-    local_copy = []
-    for i, job in enumerate(updated_jobs):  # each job is dict with data
-        count -= 1
 
-        # get url for uodated job
-        redirect_url = job.get("redirect_url")
-        home_url = get_home_url(redirect_url)
-        # update updated_jobs in place
-        job["home_url"] = home_url
-        # save job to local copy list
-        local_copy.append(job)
-
-        if not count:
-            if save_rate != jobs_num:
-                # yield batch subset
-                yield local_copy
-                local_copy = []
-                count = save_rate
-                print(f"{i+1}/{jobs_num}")
-        # print(f"{i+1}/{jobs_num}")
-    yield updated_jobs
+configure_logging()
 
 
-# handles file input and output adds home urls to jobs
-def file_add_home_urls(
-    input_file: str,
-    output_dir: str = "../../data/interim",
-    delay: float = 1.0,
-    source_dir: str = "../../data/raw/",
-    save_rate: int = None,
-) -> str:
+class HomeUrlProcessor:
+    def __init__(
+        self,
+        BD_HOST: str,
+        BD_PORT: int,
+        BD_USERNAME_BASE: str,
+        BD_PASSWORD: str,
+        BD_COUNTRY: str,
+        CERT_PATH: str,
+    ) -> None:
+        self.BD_HOST = BD_HOST
+        self.BD_PORT = BD_PORT
+        self.BD_USERNAME_BASE = BD_USERNAME_BASE
+        self.BD_PASSWORD = BD_PASSWORD
+        self.BD_COUNTRY = BD_COUNTRY
+        self.CERT_PATH = CERT_PATH
 
-    # home_dir = os.path.dirname(os.path.abspath(__file__))
-    # input_file = os.path.join(home_dir, source_dir, input_file)
-    script_dir = Path(__file__).parent
-    input_path = script_dir / source_dir / input_file
+    def add_home_urls(self, jobs: pd.DataFrame, max_workers: int) -> pd.DataFrame:
 
-    with open(input_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        redirect_urls = jobs["redirect_url"]
 
-    n = len(data)
+        home_urls = []
 
-    if not save_rate:
-        save_rate = n
+        p1 = 0
+        p2 = max_workers
 
-    batches_num = n // save_rate + (1 if n % save_rate else 0)
+        for i in range(
+            len(redirect_urls) // max_workers
+            + (1 if len(redirect_urls) % max_workers else 0)
+        ):
+            try:
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    home_url_batch = list(
+                        executor.map(self.get_home_url, redirect_urls[p1:p2])
+                    )
 
-    # create a folder in output dir
+                    p1 += max_workers
+                    p2 += max_workers
 
-    dataset_folder = f"{n}_jobs_Adzuna_batch_home_url_{save_rate}_{datetime.now().strftime('%d_%m_%Y_%H-%M-%S')}"
-    output_path = script_dir / output_dir / dataset_folder
-    output_path.mkdir(parents=True, exist_ok=True)
+                    home_urls += home_url_batch
+                    print(f"Processed batch {p1}-{p2} of {len(redirect_urls)}")
+            except KeyboardInterrupt:
+                log.info(
+                    f"you interrupted, stopped on batch {p1}-{p2} of {len(redirect_urls)}"
+                )
+                # fill the rest with none (do i need to do it in pd or will it fill automatically?)
+                # try without it and see if index matching works
+                home_urls += [None] * max(0, len(redirect_urls) - len(home_urls))
+                break
+            except Exception as e:
+                log.error(
+                    f"unknown error in batch {p1}-{p2} of {len(redirect_urls)}: {e}"
+                )
+                break
 
-    # save each batch to the folder
-    for i, batch in enumerate(json_add_home_urls(data, delay, save_rate)):
-        file_name = (
-            f"batch_{i+1}.json"
-            if i != batches_num and save_rate != n
-            else f"{n}_jobs_Adzuna_{datetime.now().strftime('%d_%m_%Y_%H-%M-%S')}_home_url.json"
-        )
+        # update the dataframe with home jobs
+        # see if index matching works
+        jobs["home_url"] = home_urls
+        return jobs
 
-        file_path = output_path / file_name
+    def get_home_url(
+        self,
+        redirect_url: str,
+        max_redirects: int = 10,
+        timeout: int = 15,
+    ) -> Optional[str]:
+        if "/land/" in redirect_url:
+            try:
+                session = requests.Session()
+                session.max_redirects = max_redirects
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(batch, f, indent=2, ensure_ascii=False)
-    return str(output_path)
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Connection": "keep-alive",  # not sure about this one
+                    "Upgrade-Insecure-Requests": "1",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Cache-Control": "max-age=0",
+                }
+
+                certificate = self.CERT_PATH
+                proxies = self._get_proxies()
+
+                response = session.get(
+                    redirect_url,
+                    headers=headers,
+                    timeout=timeout,
+                    proxies=proxies,
+                    allow_redirects=True,
+                    verify=certificate,
+                )
+
+                content = response.text
+
+                # check for meta refresh redirects
+                meta_refresh_match = re.search(
+                    r'<meta[^>]*http-equiv=["\']?refresh["\']?[^>]*content=["\']?\d+;\s*url=([^"\'>\s]+)',
+                    content,
+                    re.IGNORECASE,
+                )
+                if meta_refresh_match:
+                    redirect_url = meta_refresh_match.group(1)
+                    return redirect_url
+                else:
+                    # most likely
+                    return "either blocked or something else (license)"
+
+            # we don't really know the error behaviour, so will build up something, to catch ban and non found
+            except Exception as e:
+                print(f"Error trying to obtain home url for {redirect_url}: {e}")
+                return None
+
+        else:
+            return redirect_url
+
+    def _get_proxies(self):
+        user = f"{self.BD_USERNAME_BASE}-session-{uuid.uuid4().hex}"
+        proxy_url = f"http://{user}:{self.BD_PASSWORD}@{self.BD_HOST}:{self.BD_PORT}"
+        return {"http": proxy_url, "https": proxy_url}
 
 
 def main():
-    if len(sys.argv) == 2:
-        input_file = sys.argv[1]
-    else:
-        raise SystemExit("Correct usage: python add_home_url.py [input_file]")
+    # load file
+    name = "100_test"
+    path = RAW_DATA_DIR / (name + ".parquet")
+    jobs = pd.read_parquet(path)
 
-    try:
-        output_file_dir = file_add_home_urls(input_file, delay=1.5, save_rate=5)
-        print(f"Final dataset is saved into {output_file_dir}")
-    except Exception as e:
-        print(f"Error in main processing function: {e}")
+    url_processor = HomeUrlProcessor(
+        BD_HOST=os.getenv("BD_HOST"),
+        BD_PORT=int(os.getenv("BD_PORT")),
+        BD_USERNAME_BASE=os.getenv("BD_USERNAME_BASE"),
+        BD_PASSWORD=os.getenv("BD_PASSWORD"),
+        BD_COUNTRY=os.getenv("BD_COUNTRY"),
+        CERT_PATH=CERT_PATH,
+    )
+
+    url_jobs = url_processor.add_home_urls(jobs, max_workers=50)
+
+    # save url_jobs to data/url
+    URL_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = URL_DATA_DIR / (name + "_home_url.parquet")
+    url_jobs.to_parquet(path)
+    log.info(f"Saved processed data to {path}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        log.error(f"Error: {e}")
