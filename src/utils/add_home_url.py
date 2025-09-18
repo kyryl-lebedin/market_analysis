@@ -1,3 +1,26 @@
+"""
+Home URL Processing Module
+
+This module provides functionality to process job listings and extract home URLs
+from redirect URLs. It uses concurrent processing with proxy support to handle
+large datasets efficiently while respecting rate limits and avoiding blocks.
+
+Key Features:
+    - Concurrent processing of redirect URLs using ThreadPoolExecutor
+    - Proxy support for web scraping with BrightData integration
+    - Meta refresh redirect detection and handling
+    - Comprehensive error handling and logging
+    - Parquet file I/O for efficient data storage
+
+Classes:
+    HomeUrlProcessor: Main class for processing job URLs and extracting home URLs
+
+Functions:
+    configure_logging: Sets up logging configuration for the application
+    main: Main execution function that orchestrates the URL processing workflow
+
+"""
+
 from concurrent.futures import ThreadPoolExecutor
 import logging
 from pathlib import Path
@@ -26,14 +49,24 @@ CERT_PATH = PROJECT_ROOT / "certs" / "BrightData_SSL_certificate_(port 33335).cr
 log = logging.getLogger(__name__)
 
 
-def configure_logging(level="INFO", log_file="add_home_url_adzuna.log"):
+def configure_logging(
+    level: str = "INFO", log_file: str = "add_home_url_adzuna.log"
+) -> None:
     """
-    Configures logging for the application.
+    Configure logging for the application.
+
+    Sets up logging with both console and file output. Creates the logs directory
+    if it doesn't exist and configures the logging format with timestamps.
 
     Args:
-        level: Logging level (e.g., "INFO", "DEBUG", "WARNING")
-        log_folder: Directory to save log files
-        log_file: Name of the log file
+        level: Logging level (e.g., "INFO", "DEBUG", "WARNING", "ERROR")
+        log_file: Name of the log file to create in the logs directory
+
+    Note:
+        - Logs are written to both console and file
+        - Log format includes timestamp, level, logger name, and message
+        - Logs directory is created automatically if it doesn't exist
+
     """
 
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -51,6 +84,23 @@ configure_logging()
 
 
 class HomeUrlProcessor:
+    """
+    A processor for extracting home URLs from job listing redirect URLs.
+
+    This class handles the concurrent processing of redirect URLs to extract
+    the final home URLs of job postings. It uses proxy support and handles
+    various types of redirects including meta refresh redirects.
+
+    Attributes:
+        BD_HOST (str): BrightData proxy host address
+        BD_PORT (int): BrightData proxy port number
+        BD_USERNAME_BASE (str): Base username for proxy authentication
+        BD_PASSWORD (str): Password for proxy authentication
+        BD_COUNTRY (str): Country code for proxy location
+        CERT_PATH (str): Path to SSL certificate for residential proxy connections
+
+    """
+
     def __init__(
         self,
         BD_HOST: str,
@@ -60,6 +110,20 @@ class HomeUrlProcessor:
         BD_COUNTRY: str,
         CERT_PATH: str,
     ) -> None:
+        """
+        Initialize the HomeUrlProcessor with proxy configuration.
+
+        Args:
+            BD_HOST: BrightData proxy host address (e.g., "proxy.brightdata.com")
+            BD_PORT: BrightData proxy port number (typically 33335)
+            BD_USERNAME_BASE: Base username for proxy authentication
+            BD_PASSWORD: Password for proxy authentication
+            BD_COUNTRY: Country code for proxy location (e.g., "US", "GB")
+            CERT_PATH: Path to SSL certificate file for secure proxy connections
+
+        Raises:
+            ValueError: If any required parameter is None or empty
+        """
         self.BD_HOST = BD_HOST
         self.BD_PORT = BD_PORT
         self.BD_USERNAME_BASE = BD_USERNAME_BASE
@@ -68,6 +132,32 @@ class HomeUrlProcessor:
         self.CERT_PATH = CERT_PATH
 
     def add_home_urls(self, jobs: pd.DataFrame, max_workers: int) -> pd.DataFrame:
+        """
+        Process job listings to extract home URLs from redirect URLs.
+
+        This method processes a DataFrame of job listings, extracting home URLs
+        from their redirect URLs using concurrent processing. It handles the
+        processing in batches to manage memory and avoid overwhelming the target
+        servers.
+
+        Args:
+            jobs: DataFrame containing job listings with a 'redirect_url' column
+            max_workers: Maximum number of concurrent threads for processing
+
+        Returns:
+            DataFrame: Original jobs DataFrame with an additional 'home_url' column
+            containing the extracted home URLs
+
+        Raises:
+            KeyboardInterrupt: If processing is interrupted by user (Ctrl+C)
+            Exception: For unexpected errors during batch processing
+
+        Note:
+            - Processing is done in batches to manage memory usage
+            - Interrupted processing will fill remaining URLs with None
+            - Progress is logged for each batch completion
+
+        """
 
         redirect_urls = jobs["redirect_url"]
 
@@ -116,6 +206,29 @@ class HomeUrlProcessor:
         max_redirects: int = 10,
         timeout: int = 15,
     ) -> Optional[str]:
+        """
+        Extract the home URL from a redirect URL.
+
+        This method follows redirects and extracts the final home URL. It handles
+        both HTTP redirects and meta refresh redirects. For URLs containing '/land/',
+        it performs web scraping to extract the final destination.
+
+        Args:
+            redirect_url: The redirect URL to process
+            max_redirects: Maximum number of redirects to follow (default: 10)
+            timeout: Request timeout in seconds (default: 15)
+
+        Returns:
+            Optional[str]: The extracted home URL, or None if extraction fails.
+            Returns the original URL if it doesn't contain '/land/'.
+
+        Note:
+            - Only processes URLs containing '/land/' pattern
+            - Uses realistic browser headers to avoid detection
+            - Handles meta refresh redirects in HTML content
+            - Returns specific error message for blocked/licensed content
+
+        """
         if "/land/" in redirect_url:
             try:
                 session = requests.Session()
@@ -169,13 +282,53 @@ class HomeUrlProcessor:
         else:
             return redirect_url
 
-    def _get_proxies(self):
+    def _get_proxies(self) -> Dict[str, str]:
+        """
+        Generate proxy configuration for requests.
+
+        Creates a unique proxy session using BrightData credentials with a
+        randomly generated session ID to ensure proper session management.
+
+        Returns:
+            Dict[str, str]: Dictionary containing 'http' and 'https' proxy URLs
+            with authentication credentials
+
+        """
         user = f"{self.BD_USERNAME_BASE}-session-{uuid.uuid4().hex}"
         proxy_url = f"http://{user}:{self.BD_PASSWORD}@{self.BD_HOST}:{self.BD_PORT}"
         return {"http": proxy_url, "https": proxy_url}
 
 
-def main():
+def main() -> None:
+    """
+    Main execution function for processing job URLs.
+
+    This function orchestrates the complete workflow:
+    1. Loads job data from a parquet file
+    2. Initializes the HomeUrlProcessor with environment variables
+    3. Processes URLs to extract home URLs
+    4. Saves the results to a new parquet file
+
+    The function reads configuration from environment variables and processes
+    a file named "failed_once.parquet" from the raw data directory.
+
+    Environment Variables Required:
+        BD_HOST: BrightData proxy host
+        BD_PORT: BrightData proxy port
+        BD_USERNAME_BASE: Proxy username base
+        BD_PASSWORD: Proxy password
+        BD_COUNTRY: Proxy country code
+
+    Raises:
+        FileNotFoundError: If the input parquet file doesn't exist
+        KeyError: If required environment variables are missing
+        Exception: For other processing errors
+
+    Note:
+        - Input file: data/raw/failed_once.parquet
+        - Output file: data/url/failed_once_home_url.parquet
+        - Uses 50 concurrent workers for processing
+    """
     # load file
     name = "failed_once"
     path = RAW_DATA_DIR / (name + ".parquet")
