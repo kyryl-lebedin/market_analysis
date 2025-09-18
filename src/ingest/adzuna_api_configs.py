@@ -2,7 +2,7 @@ what_or_extensive_data = "data scientist,data science,data engineer,data enginee
 what_or_core_data = "data scientist,data engineer,machine learning,ai"
 
 what_and_680 = "cat, or,and,in,of,it"
-what_and_1411 = "cat,ll"
+what_and_1417 = "cat,ll"
 
 ADZUNA_API_PRESETS = {
     "default": dict(
@@ -11,19 +11,19 @@ ADZUNA_API_PRESETS = {
         max_workers=3,
         what_or="python,django",
     ),
-    "test_multithread_1411": dict(
+    "test_multithread_1417": dict(
         country="gb",
         formated=True,
         max_workers=3,
         scope="all_pages",
-        what_and=what_and_1411,
+        what_and=what_and_1417,
         mode="multithreading",
     ),
     "test_single_page": dict(
         country="gb",
         formated=True,
         scope="single_page",
-        what_and=what_and_1411,
+        what_and=what_and_1417,
         page=6,
     ),
 }

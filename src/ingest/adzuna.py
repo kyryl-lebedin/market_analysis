@@ -231,6 +231,76 @@ class AdzunaAPI:
 
         return results, page_error_list
 
+    def search_jobs_robust(
+        self,
+        country: str = "gb",
+        category: Optional[str] = None,
+        results_per_page: int = 50,
+        sort_by: str = None,
+        what_or: str = None,
+        what_and: str = None,
+        mode: str = "single_thread",
+        scope: str = "single_page",
+        page: int = 1,  # goes with single_page single_tread
+        pages: list = None,  # goes with multiple_pages scope
+        max_workers: int = None,  # goes with multiple_threads
+        formated: bool = False,
+        page_list: list = None,
+        max_retries: int = 5,
+    ) -> Dict[str, Any]:
+
+        jobs, error_list = self.search_jobs(
+            country=country,
+            category=category,
+            results_per_page=results_per_page,
+            sort_by=sort_by,
+            what_or=what_or,
+            what_and=what_and,
+            mode=mode,
+            scope=scope,
+            page=page,
+            pages=pages,
+            max_workers=max_workers,
+            formated=formated,
+            page_list=page_list,
+        )
+        try:
+            prev = 0
+            while len(error_list) > 0:
+
+                if len(error_list) == prev:
+                    max_retries -= 1
+                    if not max_retries:
+                        log.info(f"max retries reached, stopping search")
+                        break
+
+                page_list = error_list
+
+                missed_jobs, error_list = self.search_jobs(
+                    country=country,
+                    category=category,
+                    results_per_page=results_per_page,
+                    sort_by=sort_by,
+                    what_or=what_or,
+                    what_and=what_and,
+                    mode=mode,
+                    scope="page_list",
+                    page=page,
+                    pages=pages,
+                    max_workers=max_workers,
+                    formated=formated,
+                    page_list=page_list,
+                )
+
+                jobs += missed_jobs
+
+                prev = len(error_list)
+
+        except KeyboardInterrupt:
+            return jobs, error_list
+
+        return jobs, error_list
+
     def _fetch_single_page(
         self, endpoint: str, params: Dict[str, Any], page: int = None
     ):
@@ -377,9 +447,14 @@ def main():
     """
 
     api = AdzunaAPI(os.getenv("ADZUNA_ID"), os.getenv("ADZUNA_KEY"))
-    config = ADZUNA_API_PRESETS["test_multithread_1411"]
-    results, page_error_list = api.search_jobs(**config)
-    log.info(f"Page error list: {page_error_list}")
+    config = ADZUNA_API_PRESETS["test_multithread_1417"]
+
+    # results, page_error_list = api.search_jobs(**config)
+    # log.info(f"Page error list: {page_error_list}")
+
+    results, error_list = api.search_jobs_robust(**config)
+    log.info(f"Page error list: {error_list}")
+
     api.save_jobs_to_file(results, output_type="parquet")
 
 
