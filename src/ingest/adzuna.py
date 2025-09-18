@@ -359,7 +359,9 @@ class AdzunaAPI:
             for job in jobs:
                 # cleaning method
                 processed_job = {
-                    "id": job.get("id"),
+                    "id": (
+                        str(job.get("id")) if job.get("id") is not None else None
+                    ),  # Convert to string
                     "title": job.get("title"),
                     "company": job.get("company", {}).get("display_name"),
                     "location": job.get("location", {}).get("display_name"),
@@ -430,6 +432,10 @@ class AdzunaAPI:
             elif output_type == "parquet":
                 df = pd.DataFrame(results)
 
+                # Convert problematic columns to strings
+                if "id" in df.columns:
+                    df["id"] = df["id"].astype(str)
+
                 df.to_parquet(filepath)
 
             print(f"Results saved to {filepath}")
@@ -445,9 +451,9 @@ def main():
     """
     Main execution block for the Adzuna API client.
     """
-
+    name = "data_scientist_gb"
     api = AdzunaAPI(os.getenv("ADZUNA_ID"), os.getenv("ADZUNA_KEY"))
-    config = ADZUNA_API_PRESETS["test_multithread_1417"]
+    config = ADZUNA_API_PRESETS[name]
 
     # results, page_error_list = api.search_jobs(**config)
     # log.info(f"Page error list: {page_error_list}")
@@ -455,7 +461,7 @@ def main():
     results, error_list = api.search_jobs_robust(**config)
     log.info(f"Page error list: {error_list}")
 
-    api.save_jobs_to_file(results, output_type="parquet")
+    api.save_jobs_to_file(results, filename=(name + ".parquet"), output_type="parquet")
 
 
 if __name__ == "__main__":
