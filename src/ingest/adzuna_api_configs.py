@@ -11,6 +11,22 @@ ADZUNA_API_PRESETS = {
         max_workers=3,
         what_or="python,django",
     ),
+    "data_scientist_gb": dict(
+        country="gb",
+        formated=True,
+        max_workers=3,
+        what_and="data_scientist",
+        mode="multithreading",
+        scope="all_pages",
+    ),
+    "data_scientist_us": dict(
+        country="us",
+        formated=True,
+        max_workers=3,
+        what_and="data_scientist",
+        mode="multithreading",
+        scope="all_pages",
+    ),
     "test_multithread_1417": dict(
         country="gb",
         formated=True,

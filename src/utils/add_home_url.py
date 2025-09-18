@@ -159,6 +159,9 @@ class HomeUrlProcessor:
 
         """
 
+        # Make a copy to avoid the warning and ensure we're not modifying a slice
+        jobs = jobs.copy()
+
         redirect_urls = jobs["redirect_url"]
 
         home_urls = []
@@ -199,6 +202,51 @@ class HomeUrlProcessor:
         # see if index matching works
         jobs["home_url"] = home_urls
         return jobs
+
+    def add_home_urls_robust(
+        self,
+        jobs: pd.DataFrame,
+        max_workers: int,
+        acceptable_fault_rate: float,
+        max_tries: int,
+        initial_process: bool,
+    ) -> pd.DataFrame:
+
+        if initial_process:
+            processed_jobs = self.add_home_urls(jobs, max_workers)
+        else:
+            processed_jobs = jobs.copy()  # Avoid modifying original
+
+        fails = processed_jobs[
+            processed_jobs["home_url"] == "either blocked or something else (license)"
+        ]
+
+        non_adzuna_url_num = (
+            processed_jobs["redirect_url"].str.contains("/land/", na=False).sum()
+        )
+
+        rate = len(fails) / non_adzuna_url_num if len(processed_jobs) > 0 else 0
+
+        try:
+            while rate > acceptable_fault_rate and max_tries:
+                fail_indices = fails.index
+                fails_upd = self.add_home_urls(fails, max_workers)
+
+                # Update processed jobs indices
+                processed_jobs.loc[fail_indices, "home_url"] = fails_upd["home_url"]
+
+                fails = fails_upd[
+                    fails_upd["home_url"]
+                    == "either blocked or something else (license)"
+                ]
+
+                rate = len(fails) / non_adzuna_url_num
+                max_tries -= 1
+
+        except KeyboardInterrupt:
+            return processed_jobs
+
+        return processed_jobs
 
     def get_home_url(
         self,
@@ -330,8 +378,8 @@ def main() -> None:
         - Uses 50 concurrent workers for processing
     """
     # load file
-    name = "failed_once"
-    path = RAW_DATA_DIR / (name + ".parquet")
+    name = "data_scientist_gb_home_url"
+    path = URL_DATA_DIR / (name + ".parquet")
     jobs = pd.read_parquet(path)
 
     url_processor = HomeUrlProcessor(
@@ -343,7 +391,8 @@ def main() -> None:
         CERT_PATH=CERT_PATH,
     )
 
-    url_jobs = url_processor.add_home_urls(jobs, max_workers=50)
+    # url_jobs = url_processor.add_home_urls(jobs, max_workers=50)
+    url_jobs = url_processor.add_home_urls_robust(jobs, 50, 0, 50, False)
 
     # save url_jobs to data/url
     URL_DATA_DIR.mkdir(parents=True, exist_ok=True)

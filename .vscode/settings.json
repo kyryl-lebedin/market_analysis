@@ -10,5 +10,6 @@
         ".gitignore.local": true,
         ".conda-env": true,
         "**/__pycache__": true,
+        "**/data_save": true,
     }
 }
