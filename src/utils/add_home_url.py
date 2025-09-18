@@ -8,6 +8,7 @@ from typing import Dict, List, Any, Optional
 import requests
 import uuid
 import re
+import certifi
 
 # load environment variables
 load_dotenv()
@@ -142,7 +143,7 @@ class HomeUrlProcessor:
                     timeout=timeout,
                     proxies=proxies,
                     allow_redirects=True,
-                    verify=certificate,
+                    verify=certifi.where(),  # use 'certificate' when using residential proxy, 'certifi.where()' when using datacenter proxy
                 )
 
                 content = response.text
@@ -176,7 +177,7 @@ class HomeUrlProcessor:
 
 def main():
     # load file
-    name = "100_test"
+    name = "failed_once"
     path = RAW_DATA_DIR / (name + ".parquet")
     jobs = pd.read_parquet(path)
 
