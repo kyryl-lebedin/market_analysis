@@ -317,8 +317,64 @@ class HomeUrlProcessor:
                 )
                 if meta_refresh_match:
                     redirect_url = meta_refresh_match.group(1)
+
+                    if "click.appcast" in redirect_url:
+                        # For click.appcast URLs, we need to make another request to get the final redirect
+                        try:
+                            response2 = session.get(
+                                redirect_url,
+                                headers=headers,
+                                timeout=timeout,
+                                proxies=proxies,
+                                allow_redirects=True,
+                                verify=certifi.where(),
+                            )
+                            content2 = response2.text
+
+                            # Check for JavaScript redirects in the click.appcast response
+                            js_redirect_match = re.search(
+                                r'navigateTo\([^,]+,\s*[^,]+,\s*["\']([^"\']+)["\']',
+                                content2,
+                                re.IGNORECASE,
+                            )
+                            if js_redirect_match:
+                                return js_redirect_match.group(1)
+
+                            # Check for other JavaScript redirect patterns
+                            js_location_match = re.search(
+                                r'window\.location\.(?:href|replace)\s*=\s*["\']([^"\']+)["\']',
+                                content2,
+                                re.IGNORECASE,
+                            )
+                            if js_location_match:
+                                return js_location_match.group(1)
+
+                        except Exception as e:
+                            print(f"Error processing click.appcast redirect: {e}")
+                            return "either blocked or something else (license)"
+
                     return redirect_url
                 else:
+                    # Check if original URL contains click.appcast and handle it directly
+                    if "click.appcast" in redirect_url:
+                        # Check for JavaScript redirects in the original content
+                        js_redirect_match = re.search(
+                            r'navigateTo\([^,]+,\s*[^,]+,\s*["\']([^"\']+)["\']',
+                            content,
+                            re.IGNORECASE,
+                        )
+                        if js_redirect_match:
+                            return js_redirect_match.group(1)
+
+                        # Check for other JavaScript redirect patterns
+                        js_location_match = re.search(
+                            r'window\.location\.(?:href|replace)\s*=\s*["\']([^"\']+)["\']',
+                            content,
+                            re.IGNORECASE,
+                        )
+                        if js_location_match:
+                            return js_location_match.group(1)
+
                     # most likely
                     return "either blocked or something else (license)"
 
@@ -378,8 +434,8 @@ def main() -> None:
         - Uses 50 concurrent workers for processing
     """
     # load file
-    name = "data_scientist_gb_home_url"
-    path = URL_DATA_DIR / (name + ".parquet")
+    name = "data_scientist_gb"
+    path = RAW_DATA_DIR / (name + ".parquet")
     jobs = pd.read_parquet(path)
 
     url_processor = HomeUrlProcessor(
@@ -392,13 +448,18 @@ def main() -> None:
     )
 
     # url_jobs = url_processor.add_home_urls(jobs, max_workers=50)
-    url_jobs = url_processor.add_home_urls_robust(jobs, 50, 0, 50, False)
+    url_jobs = url_processor.add_home_urls_robust(jobs, 100, 0.01, 10, True)
 
     # save url_jobs to data/url
     URL_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    path = URL_DATA_DIR / (name + "_home_url.parquet")
+    path = URL_DATA_DIR / (name + "raw_home_url.parquet")
     url_jobs.to_parquet(path)
     log.info(f"Saved processed data to {path}")
+
+    # test = url_processor.get_home_url(
+    #     "https://www.adzuna.co.uk/jobs/land/ad/5382334478?se=Pm-xqNWU8BGiM5twZbwYxg&utm_medium=api&utm_source=a6e6527f&v=ED9447DD603CADF66C94B171076D9175DA28D473"
+    # )
+    # print(test)
 
 
 if __name__ == "__main__":
