@@ -179,18 +179,19 @@ class HomeUrlProcessor:
                         executor.map(self.get_home_url, redirect_urls[p1:p2])
                     )
 
+                    home_urls += home_url_batch
+                    log.info(
+                        f"Processed batch {p1}-{min(p2, len(redirect_urls))} of {len(redirect_urls)}"
+                    )
                     p1 += max_workers
                     p2 += max_workers
-
-                    home_urls += home_url_batch
-                    print(f"Processed batch {p1}-{p2} of {len(redirect_urls)}")
             except KeyboardInterrupt:
                 log.info(
                     f"you interrupted, stopped on batch {p1}-{p2} of {len(redirect_urls)}"
                 )
                 # fill the rest with none (do i need to do it in pd or will it fill automatically?)
                 # try without it and see if index matching works
-                home_urls += [None] * max(0, len(redirect_urls) - len(home_urls))
+                home_urls += [None] * min(0, len(redirect_urls) - len(home_urls))
                 break
             except Exception as e:
                 log.error(

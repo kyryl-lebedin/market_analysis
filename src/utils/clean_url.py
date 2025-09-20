@@ -5,7 +5,7 @@
 import pandas as pd
 from urllib.parse import urlparse
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 
 def extract_domain(url):
@@ -30,7 +30,7 @@ def unique_domains(df: pd.DataFrame, print_results: bool = False) -> pd.Series:
 
 
 def drop_rare_domains(
-    df: pd.DataFrame, top_n: int, copy: bool = False
+    df: pd.DataFrame, top_n: int, copy: bool = False, specific_domains: List = []
 ) -> Optional[pd.DataFrame]:
     """
     Keep only rows with domains that are in the top N most frequent domains.
@@ -57,6 +57,11 @@ def drop_rare_domains(
 
     # Get top N domains to keep
     top_domains = domain_counts.head(top_n).index.tolist()
+
+    if specific_domains:
+        top_domains = [
+            domain for domain in top_domains if domain not in specific_domains
+        ]
 
     # Add domain column temporarily for filtering
     df["domain"] = df["home_url"].apply(extract_domain)
@@ -97,7 +102,9 @@ CLEANURL_DATA_DIR = PROJECT_ROOT / "data" / "clean_url"
 path = URL_DATA_DIR / "data_scientist_gbraw_home_url.parquet"
 df = pd.read_parquet(path)
 
-filtered_df = drop_rare_domains(df, 4)
+# unique_domains(df, print_results=True)
+targets_to_exclude = ["www.cv-library.co.uk", "www.totaljobs.com"]
+filtered_df = drop_rare_domains(df, 4, specific_domains=targets_to_exclude)
 filtered_df = strip_url(filtered_df)
 path = CLEANURL_DATA_DIR / "data_scientist_gbraw_clean_url.parquet"
 
