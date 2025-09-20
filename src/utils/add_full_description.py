@@ -1,3 +1,4 @@
+from multiprocessing import process
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
@@ -127,6 +128,41 @@ class FullDescriptionProcessor:
         jobs["full_description"] = full_descriptions
         return jobs
 
+    def add_full_descriptions_robust(
+        self,
+        jobs: pd.DataFrame,
+        max_workers: int,
+        acceptable_fault_rate: float,
+        max_tries: int,
+        initial_process: bool,
+    ) -> pd.DataFrame:
+
+        if initial_process:
+            processed_jobs = self.add_full_descriptions(jobs, max_workers)
+        else:
+            processed_jobs = jobs.copy()
+
+        fails = processed_jobs[processed_jobs["full_description"] == ""]
+
+        rate = len(fails) / len(processed_jobs) if len(processed_jobs) > 0 else 0
+
+        try:
+            while rate > acceptable_fault_rate and max_tries:
+                fail_indices = fails.index
+                fails_upd = self.add_full_descriptions(fails, max_workers)
+
+                processed_jobs.loc[fail_indices, "full_description"] = fails_upd[
+                    "full_description"
+                ]
+                fails = fails_upd[fails_upd["full_description"] == ""]
+
+                rate = len(fails) / len(processed_jobs)
+                max_tries -= 1
+        except KeyboardInterrupt:
+            return processed_jobs
+
+        return processed_jobs
+
     def get_description(
         self,
         url: str,
@@ -163,7 +199,7 @@ class FullDescriptionProcessor:
             domain = urlparse(url).netloc.lower()
 
             description = self._parse_response(response.text, domain)
-            print(description)
+            # print(description)
             return description
         except Exception as e:
             log.error(f"error in get_html {url}: {e}")
@@ -272,9 +308,21 @@ def main():
         BD_COUNTRY=os.getenv("BD_COUNTRY"),
     )
 
-    description_processor.get_description(
-        "https://www.adzuna.co.uk/jobs/details/5373626175"
-    )
+    # description_processor.get_description(
+    #     "https://www.adzuna.co.uk/jobs/details/5389313154"
+    # )
+
+    path = CLEAN_URL_DATA_DIR / "data_scientist_gbraw_clean_url.parquet"
+    df = pd.read_parquet(path)
+    descriptions = description_processor.add_full_descriptions_robust(
+        df,
+        max_workers=100,
+        acceptable_fault_rate=0.01,
+        max_tries=5,
+        initial_process=True,
+    )  # Add copy=True here
+    path = FULL_DESCRIPTION_DATA_DIR / "data_scientist_gbraw_full_description.parquet"
+    descriptions.to_parquet(path)
 
 
 if __name__ == "__main__":
