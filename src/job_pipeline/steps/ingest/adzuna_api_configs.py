@@ -42,4 +42,13 @@ ADZUNA_API_PRESETS = {
         what_and=what_and_1417,
         page=6,
     ),
+    "test_page_list": dict(
+        country="gb",
+        formated=True,
+        scope="page_list",
+        mode="multithreading",
+        max_workers=3,
+        what_and=what_and_1417,
+        page_list=[6, 7, 8, 9, 10],
+    ),
 }

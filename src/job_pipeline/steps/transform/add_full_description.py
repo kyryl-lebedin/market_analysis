@@ -13,53 +13,43 @@ import certifi
 import os
 import uuid
 from urllib.parse import urlparse
+import sys
 
 # load environmental variables
 load_dotenv()
 
 
+################# IMPORTING AND LOGGING SETUP ##################################
+
 # intialize directories
-PROJECT_ROOT = Path(__file__).parent.parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+DATA_DIR = PROJECT_ROOT / "data"
+SILVER_DIR = DATA_DIR / "silver"
+GOLD_DIR = DATA_DIR / "gold"
+GOLD_DIR.mkdir(parents=True, exist_ok=True)
+SILVER_DIR.mkdir(parents=True, exist_ok=True)
+
 LOGS_DIR = PROJECT_ROOT / "logs"
-CLEAN_URL_DATA_DIR = PROJECT_ROOT / "data" / "clean_url"
-FULL_DESCRIPTION_DATA_DIR = PROJECT_ROOT / "data" / "full_description"
+CERT_PATH = PROJECT_ROOT / "certs" / "BrightData_SSL_certificate_(port 33335).crt"
+
+from src.logging_conf import setup_logging, get_logger
 
 # set up logging
 log = logging.getLogger(__name__)
 
+log = get_logger(__name__)
 
-def configure_logging(
-    level: str = "INFO", log_file: str = "add_home_url_adzuna.log"
-) -> None:
-    """
-    Configure logging for the application.
-
-    Sets up logging with both console and file output. Creates the logs directory
-    if it doesn't exist and configures the logging format with timestamps.
-
-    Args:
-        level: Logging level (e.g., "INFO", "DEBUG", "WARNING", "ERROR")
-        log_file: Name of the log file to create in the logs directory
-
-    Note:
-        - Logs are written to both console and file
-        - Log format includes timestamp, level, logger name, and message
-        - Logs directory is created automatically if it doesn't exist
-
-    """
-
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    log_path = LOGS_DIR / log_file
-
-    logging.basicConfig(
-        level=getattr(logging, level),
-        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[logging.StreamHandler(), logging.FileHandler(log_path, "a")],
-    )
+if __name__ == "__main__":
+    # if ingestion is run locally
+    setup_logging(app_name="add_full_description", level="INFO", log_dir=LOGS_DIR)
+    # Force the logger to use the configured "add_home_url" logger
+    log = get_logger("add_full_description")
+    log.info("Starting Full Description processing...")
 
 
-configure_logging()
+#######################################################################################
 
 
 class FullDescriptionProcessor:
@@ -312,7 +302,7 @@ def main():
     #     "https://www.adzuna.co.uk/jobs/details/5389313154"
     # )
 
-    path = CLEAN_URL_DATA_DIR / "data_scientist_gbraw_clean_url.parquet"
+    path = SILVER_DIR / "test_page_listraw_home_url.parquet"
     df = pd.read_parquet(path)
     descriptions = description_processor.add_full_descriptions_robust(
         df,
@@ -321,7 +311,10 @@ def main():
         max_tries=5,
         initial_process=True,
     )  # Add copy=True here
-    path = FULL_DESCRIPTION_DATA_DIR / "data_scientist_gbraw_full_description.parquet"
+
+    log.info(f"Processed {len(descriptions)} job listings")
+
+    path = GOLD_DIR / "test_page_listraw_home_url_full_description.parquet"
     descriptions.to_parquet(path)
 
 

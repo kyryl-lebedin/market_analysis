@@ -32,55 +32,43 @@ import requests
 import uuid
 import re
 import certifi
+import sys
+from urllib.parse import urlparse
 
 # load environment variables
 load_dotenv()
 
+############################## IMORTING AND LOGGING SETUP ################################
 
 # intialize directories
-PROJECT_ROOT = Path(__file__).parent.parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+DATA_DIR = PROJECT_ROOT / "data"
+BRONZE_DIR = DATA_DIR / "bronze"
+SILVER_DIR = DATA_DIR / "silver"
+BRONZE_DIR.mkdir(parents=True, exist_ok=True)
+SILVER_DIR.mkdir(parents=True, exist_ok=True)
+
 LOGS_DIR = PROJECT_ROOT / "logs"
-RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
-URL_DATA_DIR = PROJECT_ROOT / "data" / "url"
 CERT_PATH = PROJECT_ROOT / "certs" / "BrightData_SSL_certificate_(port 33335).crt"
 
+from src.logging_conf import setup_logging, get_logger
 
 # set up logging
 log = logging.getLogger(__name__)
 
+log = get_logger(__name__)
 
-def configure_logging(
-    level: str = "INFO", log_file: str = "add_home_url_adzuna.log"
-) -> None:
-    """
-    Configure logging for the application.
-
-    Sets up logging with both console and file output. Creates the logs directory
-    if it doesn't exist and configures the logging format with timestamps.
-
-    Args:
-        level: Logging level (e.g., "INFO", "DEBUG", "WARNING", "ERROR")
-        log_file: Name of the log file to create in the logs directory
-
-    Note:
-        - Logs are written to both console and file
-        - Log format includes timestamp, level, logger name, and message
-        - Logs directory is created automatically if it doesn't exist
-
-    """
-
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    log_path = LOGS_DIR / log_file
-
-    logging.basicConfig(
-        level=getattr(logging, level),
-        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[logging.StreamHandler(), logging.FileHandler(log_path, "a")],
-    )
+if __name__ == "__main__":
+    # if ingestion is run locally
+    setup_logging(app_name="add_home_url", level="INFO", log_dir=LOGS_DIR)
+    # Force the logger to use the configured "add_home_url" logger
+    log = get_logger("add_home_url")
+    log.info("Starting Home URL processing...")
 
 
-configure_logging()
+#######################################################################################
 
 
 class HomeUrlProcessor:
@@ -403,6 +391,137 @@ class HomeUrlProcessor:
         proxy_url = f"http://{user}:{self.BD_PASSWORD}@{self.BD_HOST}:{self.BD_PORT}"
         return {"http": proxy_url, "https": proxy_url}
 
+    ############################# URL CLEANIG FUNCTIONALITY ################################
+
+    def clean_urls(
+        self,
+        df: pd.DataFrame,
+        # top_n: int,
+        copy: bool = True,
+        specific_domains: List = [],
+    ) -> pd.DataFrame:
+
+        if copy:
+            df = df.copy()
+        # df = self.drop_rare_domains(df, top_n, specific_domains=specific_domains)
+        df = self.keep_specific_domains(df, specific_domains)
+        df = self.strip_url(df)
+        return df
+
+    def extract_domain(self, url):
+        if not url:
+            return None
+        try:
+            parsed = urlparse(str(url))
+            return parsed.netloc
+        except:
+            return None
+
+    def unique_domains(self, df: pd.DataFrame, log_results: bool = True) -> pd.Series:
+
+        counts = df["home_url"].apply(self.extract_domain).dropna().value_counts()
+
+        if log_results:
+            log.info("Unique domains:")
+            for domain, count in counts.items():
+                log.info(f"{domain}: {count}")
+
+        return counts
+
+    def keep_specific_domains(
+        self, df: pd.DataFrame, specific_domains: List
+    ) -> pd.DataFrame:
+        df["domain"] = df["home_url"].apply(self.extract_domain)
+        df = df[df["domain"].isin(specific_domains)]
+        df = df.drop("domain", axis=1)
+        log.info(f"Filtered dataframe to keep only specific domains {specific_domains}")
+        return df
+
+    def drop_rare_domains(
+        self,
+        df: pd.DataFrame,
+        top_n: int,
+        copy: bool = True,
+        specific_domains: List = [],
+        log_results: bool = True,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Keep only rows with domains that are in the top N most frequent domains.
+
+        Args:
+            df: DataFrame with 'home_url' column
+            top_n: Number of top domains to keep
+            copy: Whether to return a copy or modify in place
+
+        Returns:
+            DataFrame with only top N domains, or None if error
+        """
+        if copy:
+            df = df.copy()
+
+        # Get domain counts
+        domain_counts = self.unique_domains(df)
+
+        if top_n > len(domain_counts):
+            print(
+                f"top_n ({top_n}) is greater than the number of unique domains ({len(domain_counts)})"
+            )
+            return None
+
+        # Get top N domains to keep
+        top_domains = domain_counts.head(top_n).index.tolist()
+
+        if log_results:
+            log.info("Top domains to keep:")
+            for domain in top_domains:
+                log.info(f"{domain}")
+
+            log.info("Specific domains to exclude:")
+            for domain in specific_domains:
+                log.info(f"{domain}")
+
+        if specific_domains:
+            top_domains = [
+                domain for domain in top_domains if domain not in specific_domains
+            ]
+
+        # Add domain column temporarily for filtering
+        df["domain"] = df["home_url"].apply(self.extract_domain)
+
+        # Filter to keep only rows with top domains
+        filtered_df = df[df["domain"].isin(top_domains)].copy()
+
+        # Remove the temporary domain column
+        filtered_df = filtered_df.drop("domain", axis=1)
+
+        log.info(
+            "Filtered dataframe to keep only top domains and exclude specific domains"
+        )
+
+        return filtered_df
+
+    def strip_url(self, df: pd.DataFrame, copy: bool = True):
+        """
+        Strip main known domains to avoid difficulties for scraping
+        """
+        # basic version - just strip everything until ?
+
+        if copy:
+            df = df.copy()
+
+        def strip(url: str) -> str:
+            if not url or pd.isna(url):  # Handle None/NaN values
+                return url
+            if "?" in url:
+                url = url.split("?")[0]
+            return url
+
+        df["home_url"] = df["home_url"].apply(strip)
+
+        log.info("URLs stripped")
+
+        return df
+
 
 def main() -> None:
     """
@@ -435,8 +554,8 @@ def main() -> None:
         - Uses 50 concurrent workers for processing
     """
     # load file
-    name = "data_scientist_gb"
-    path = RAW_DATA_DIR / (name + ".parquet")
+    name = "test_page_list"
+    path = BRONZE_DIR / (name + ".parquet")
     jobs = pd.read_parquet(path)
 
     url_processor = HomeUrlProcessor(
@@ -450,17 +569,14 @@ def main() -> None:
 
     # url_jobs = url_processor.add_home_urls(jobs, max_workers=50)
     url_jobs = url_processor.add_home_urls_robust(jobs, 100, 0.01, 10, True)
+    url_jobs = url_processor.clean_urls(
+        url_jobs, specific_domains=["www.adzuna.co.uk", "www.linkedin.com"]
+    )
 
-    # save url_jobs to data/url
-    URL_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    path = URL_DATA_DIR / (name + "raw_home_url.parquet")
+    # save
+    path = SILVER_DIR / (name + "raw_home_url.parquet")
     url_jobs.to_parquet(path)
     log.info(f"Saved processed data to {path}")
-
-    # test = url_processor.get_home_url(
-    #     "https://www.adzuna.co.uk/jobs/land/ad/5382334478?se=Pm-xqNWU8BGiM5twZbwYxg&utm_medium=api&utm_source=a6e6527f&v=ED9447DD603CADF66C94B171076D9175DA28D473"
-    # )
-    # print(test)
 
 
 if __name__ == "__main__":

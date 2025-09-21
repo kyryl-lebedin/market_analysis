@@ -16,44 +16,41 @@ import os, requests, json, datetime
 from dotenv import load_dotenv
 from typing import Dict, List, Optional, Any
 from concurrent.futures import ThreadPoolExecutor
-import logging
+
 import pandas as pd
 
 import sys
 from pathlib import Path
 
-log = logging.getLogger(__name__)
 load_dotenv()
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+################# IMPORTING AND LOGGING SETUP ##################################
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+
+sys.path.insert(0, str(PROJECT_ROOT))
+
 DATA_DIR = PROJECT_ROOT / "data"
+BRONZE_DIR = DATA_DIR / "bronze"
+BRONZE_DIR.mkdir(parents=True, exist_ok=True)
+
 LOGS_DIR = PROJECT_ROOT / "logs"
 
-from adzuna_api_configs import ADZUNA_API_PRESETS
+from adzuna_api_configs import ADZUNA_API_PRESETS  # checks file dir
 
+from src.logging_conf import setup_logging, get_logger  # checks sys.path dir
 
-def configure_logging(level="INFO", log_file="adzuna_api.log"):
-    """
-    Configures logging for the application.
+log = get_logger(__name__)
 
-    Args:
-        level: Logging level (e.g., "INFO", "DEBUG", "WARNING")
-        log_folder: Directory to save log files
-        log_file: Name of the log file
-    """
+if __name__ == "__main__":
+    # if ingestion is run locally
+    setup_logging(app_name="adzuna", level="INFO", log_dir=LOGS_DIR)
+    # Force the logger to use the configured "adzuna" logger
+    log = get_logger("adzuna")
+    log.info("Starting Adzuna ingest...")
 
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    log_path = LOGS_DIR / log_file
-
-    logging.basicConfig(
-        level=getattr(logging, level),
-        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[logging.StreamHandler(), logging.FileHandler(log_path, "a")],
-    )
-
-
-configure_logging()
+################################################################################
 
 
 class AdzunaAPI:
@@ -420,7 +417,7 @@ class AdzunaAPI:
             elif output_type == "parquet":
                 filename = f"{len(results)}_adzuna_jobs_{timestamp}.parquet"
 
-        raw_data_dir = DATA_DIR / "raw"
+        raw_data_dir = DATA_DIR / "bronze"
         raw_data_dir.mkdir(parents=True, exist_ok=True)
         filepath = raw_data_dir / filename
 
@@ -446,12 +443,24 @@ class AdzunaAPI:
         except Exception as e:
             raise Exception(f"Unexpected error saving file {filepath}: {e}")
 
+    def to_df(
+        self,
+        results: List[Dict[str, Any]],
+    ):
+        df = pd.DataFrame(results)
+
+        # Convert problematic columns to strings
+        if "id" in df.columns:
+            df["id"] = df["id"].astype(str)
+
+        return df
+
 
 def main():
     """
     Main execution block for the Adzuna API client.
     """
-    name = "data_scientist_gb"
+    name = "test_page_list"
     api = AdzunaAPI(os.getenv("ADZUNA_ID"), os.getenv("ADZUNA_KEY"))
     config = ADZUNA_API_PRESETS[name]
 
@@ -459,9 +468,15 @@ def main():
     # log.info(f"Page error list: {page_error_list}")
 
     results, error_list = api.search_jobs_robust(**config)
-    log.info(f"Page error list: {error_list}")
 
-    api.save_jobs_to_file(results, filename=(name + ".parquet"), output_type="parquet")
+    if error_list:
+        log.info(f"Page error list: {error_list}")
+
+    results = api.to_df(results)
+
+    results.to_parquet(BRONZE_DIR / (name + ".parquet"))
+
+    log.info(f"Saved results to {BRONZE_DIR / (name + '.parquet')}")
 
 
 if __name__ == "__main__":
