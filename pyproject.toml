@@ -1,0 +1,51 @@
+[tool.poetry]
+name = "job-pipeline"
+version = "0.1.0"
+description = "ETL pipeline for job data (Adzuna → bronze/silver/gold)"
+authors = ["Kyryl kyryllebedin@gmail.com"]
+readme = "README.md"
+packages = [{ include = "job_pipeline", from = "src" }]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+# From your requirements.txt (pinned; adjust if you want looser ranges)
+aiohappyeyeballs = "2.6.1"
+aiohttp = "3.12.15"
+aiosignal = "1.4.0"
+attrs = "25.3.0"
+beautifulsoup4 = "4.13.5"
+bs4 = "0.0.2"
+certifi = "2025.8.3"
+charset-normalizer = "3.4.3"
+dotenv = "0.9.9"
+frozenlist = "1.7.0"
+idna = "3.10"
+multidict = "6.6.4"
+numpy = "2.3.3"
+pandas = "2.3.2"
+propcache = "0.3.2"
+pyarrow = "21.0.0"
+python-dateutil = "2.9.0.post0"
+python-dotenv = "1.1.1"
+pytz = "2025.2"
+requests = "2.32.5"
+six = "1.17.0"
+soupsieve = "2.8"
+typing_extensions = "4.15.0"
+tzdata = "2025.2"
+urllib3 = "2.5.0"
+yarl = "1.20.1"
+typer = "^0.19.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3"
+ruff = "^0.6"
+ipykernel = "^6.29"
+
+[tool.poetry.scripts]
+# This exposes a `job-pipeline` command
+job-pipeline = "job_pipeline.cli:app"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
