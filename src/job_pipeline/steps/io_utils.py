@@ -10,8 +10,8 @@ from job_pipeline.config import GOLD_DIR, BRONZE_DIR, SILVER_DIR, LOGS_DIR
 
 from job_pipeline.logging_conf import get_logger
 
-# Use the same logger name as the main app - no setup_logging needed here
-log = get_logger("pipeline")  # testing only, will dance with it later
+
+log = get_logger(__name__)
 
 
 # creates unique name for dataset that would be used later as main part of naming

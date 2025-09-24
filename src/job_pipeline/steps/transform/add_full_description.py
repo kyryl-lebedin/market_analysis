@@ -32,14 +32,7 @@ from job_pipeline.steps.io_utils import (
 
 # set up logging
 
-log = get_logger("pipeline")
-
-if __name__ == "__main__":
-    # if ingestion is run locally
-    setup_logging(app_name="add_full_description", level="INFO", log_dir=LOGS_DIR)
-    # Force the logger to use the configured "add_home_url" logger
-    log = get_logger("add_full_description")
-    log.info("Starting Full Description processing...")
+log = get_logger(__name__)
 
 
 #######################################################################################

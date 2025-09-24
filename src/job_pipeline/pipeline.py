@@ -6,7 +6,7 @@ from job_pipeline.logging_conf import get_logger, setup_logging
 from job_pipeline.config import LOGS_DIR
 
 # adzuna api import
-from job_pipeline.config import ADZUNA_API_PRESETS, ADZUNA_ID, ADZUNA_KEY
+from job_pipeline.config import ADZUNA_API_PRESETS, ADZUNA_ID, ADZUNA_KEY, LOG_APP_NAME
 
 # bright data proxy import
 from job_pipeline.config import (
@@ -21,8 +21,7 @@ from job_pipeline.config import (
 log = get_logger(__name__)
 
 if __name__ == "__main__":
-    setup_logging(level="INFO", log_dir=LOGS_DIR)
-    log = get_logger("pipeline")
+    log = setup_logging(level="INFO", log_dir=LOGS_DIR)  # job_pipeline by default
     log.info("Starting pipeline execution...")
 
 
@@ -44,7 +43,7 @@ def run_pipeline():
 
         # STAGE 1: INGEST RAW DATA, SAVE TO BRONZE
 
-        name = "test"
+        name = "test1"
         config = ADZUNA_API_PRESETS["test_page_list"]
 
         api_client = AdzunaAPI(ADZUNA_ID, ADZUNA_KEY)

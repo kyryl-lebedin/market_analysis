@@ -1,32 +1,19 @@
-import os
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
 import logging.handlers
-
-load_dotenv()
-
-PROJECT_ROOT = Path(__file__).parent.parent
-_DEFAULT_APP_NAME = os.getenv("LOG_APP_NAME", "pipeline")  # not sure
-_DEFAULT_LOG_LEVEL = os.getenv(
-    "LOG_LEVEL", "INFO"
-).upper()  # for debugging in production
-_DEFAULT_LOG_DIR = Path(
-    os.getenv("LOG_DIR", PROJECT_ROOT / "logs")
-)  # might be usefull for deployment
+from job_pipeline.config import LOGS_DIR, LOG_LEVEL, LOG_APP_NAME
 
 
 def setup_logging(
-    app_name: str = "pipeline",
+    app_name: str = None,
     log_dir: Path = None,
     level: str = None,
     keep_days: int = 7,
 ):
-    name = app_name or _DEFAULT_APP_NAME
-    lvl = getattr(
-        logging, (level or _DEFAULT_LOG_LEVEL).upper(), logging.INFO
-    )  # retrieve log numbers
-    dir_ = log_dir or _DEFAULT_LOG_DIR
+    name = app_name or LOG_APP_NAME
+    lvl = getattr(logging, (level or LOG_LEVEL).upper(), logging.INFO)
+    dir_ = log_dir or LOGS_DIR
 
     logger = logging.getLogger(name)
 
@@ -35,7 +22,8 @@ def setup_logging(
         logger.setLevel(lvl)
         return logger
 
-    dir_.mkdir(parents=True, exist_ok=True)
+    dir_.mkdir(parents=True, exist_ok=True)  # leave for protection
+
     logger.setLevel(lvl)
 
     fmt = logging.Formatter(
@@ -60,12 +48,9 @@ def setup_logging(
     logger.addHandler(fh)
     logger.addHandler(ch)
 
-    # Optional: quiet noisy libs a bit
+    # quiet noisy libs a bit
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("requests").setLevel(logging.WARNING)
-
-    # Allow child loggers to propagate to this logger so console output works
-    logger.propagate = True
 
     return logger
 

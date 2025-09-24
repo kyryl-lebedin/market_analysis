@@ -15,6 +15,9 @@ SILVER_DIR = Path(os.getenv("SILVER_DIR", DATA_DIR / "silver"))
 GOLD_DIR = Path(os.getenv("GOLD_DIR", DATA_DIR / "gold"))
 LOGS_DIR = Path(os.getenv("LOGS_DIR", PROJECT_ROOT / "logs"))
 
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_APP_NAME = os.getenv("LOG_APP_NAME", "pipeline")
+
 BRONZE_DIR.mkdir(parents=True, exist_ok=True)
 SILVER_DIR.mkdir(parents=True, exist_ok=True)
 GOLD_DIR.mkdir(parents=True, exist_ok=True)

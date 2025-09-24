@@ -30,13 +30,6 @@ from job_pipeline.steps.io_utils import adzuna_save_raw_bronze
 
 log = get_logger(__name__)
 
-if __name__ == "__main__":
-    # if ingestion is run locally
-    setup_logging(app_name="adzuna", level="INFO", log_dir=LOGS_DIR)
-    # Force the logger to use the configured "adzuna" logger
-    log = get_logger("adzuna")
-    log.info("Starting Adzuna ingest...")
-
 
 class AdzunaAPI:
     """Adzuna API client for job search"""
