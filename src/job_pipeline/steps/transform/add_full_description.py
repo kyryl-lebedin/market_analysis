@@ -15,31 +15,24 @@ import uuid
 from urllib.parse import urlparse
 import sys
 
-# load environmental variables
-load_dotenv()
 
-
-################# IMPORTING AND LOGGING SETUP ##################################
-
-# intialize directories
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-
-DATA_DIR = PROJECT_ROOT / "data"
-SILVER_DIR = DATA_DIR / "silver"
-GOLD_DIR = DATA_DIR / "gold"
-GOLD_DIR.mkdir(parents=True, exist_ok=True)
-SILVER_DIR.mkdir(parents=True, exist_ok=True)
-
-LOGS_DIR = PROJECT_ROOT / "logs"
-CERT_PATH = PROJECT_ROOT / "certs" / "BrightData_SSL_certificate_(port 33335).crt"
-
-from src.logging_conf import setup_logging, get_logger
+from job_pipeline.logging_conf import get_logger, setup_logging
+from job_pipeline.config import (
+    LOGS_DIR,
+    BD_HOST,
+    BD_PASSWORD,
+    BD_PORT,
+    BD_USERNAME_BASE,
+    BD_COUNTRY,
+)
+from job_pipeline.steps.io_utils import (
+    adzuna_read_home_url_silver,
+    adzuna_save_full_description_gold,
+)
 
 # set up logging
-log = logging.getLogger(__name__)
 
-log = get_logger(__name__)
+log = get_logger("pipeline")
 
 if __name__ == "__main__":
     # if ingestion is run locally
@@ -291,31 +284,26 @@ class FullDescriptionProcessor:
 
 def main():
     description_processor = FullDescriptionProcessor(
-        BD_HOST=os.getenv("BD_HOST"),
-        BD_PORT=int(os.getenv("BD_PORT")),
-        BD_USERNAME_BASE=os.getenv("BD_USERNAME_BASE"),
-        BD_PASSWORD=os.getenv("BD_PASSWORD"),
-        BD_COUNTRY=os.getenv("BD_COUNTRY"),
+        BD_HOST=BD_HOST,
+        BD_PORT=int(BD_PORT),
+        BD_USERNAME_BASE=BD_USERNAME_BASE,
+        BD_PASSWORD=BD_PASSWORD,
+        BD_COUNTRY=BD_COUNTRY,
     )
 
-    # description_processor.get_description(
-    #     "https://www.adzuna.co.uk/jobs/details/5389313154"
-    # )
+    file_name = "adzuna_test_page_list_191306"
 
-    path = SILVER_DIR / "test_page_listraw_home_url.parquet"
-    df = pd.read_parquet(path)
+    df = adzuna_read_home_url_silver(file_name)
+
     descriptions = description_processor.add_full_descriptions_robust(
         df,
-        max_workers=100,
+        max_workers=50,
         acceptable_fault_rate=0.01,
         max_tries=5,
         initial_process=True,
     )  # Add copy=True here
 
-    log.info(f"Processed {len(descriptions)} job listings")
-
-    path = GOLD_DIR / "test_page_listraw_home_url_full_description.parquet"
-    descriptions.to_parquet(path)
+    adzuna_save_full_description_gold(descriptions, file_name)
 
 
 if __name__ == "__main__":

@@ -22,24 +22,11 @@ import pandas as pd
 import sys
 from pathlib import Path
 
-load_dotenv()
+from job_pipeline.logging_conf import get_logger, setup_logging
 
+from job_pipeline.config import ADZUNA_API_PRESETS, LOGS_DIR, ADZUNA_ID, ADZUNA_KEY
 
-################# IMPORTING AND LOGGING SETUP ##################################
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
-
-sys.path.insert(0, str(PROJECT_ROOT))
-
-DATA_DIR = PROJECT_ROOT / "data"
-BRONZE_DIR = DATA_DIR / "bronze"
-BRONZE_DIR.mkdir(parents=True, exist_ok=True)
-
-LOGS_DIR = PROJECT_ROOT / "logs"
-
-from adzuna_api_configs import ADZUNA_API_PRESETS  # checks file dir
-
-from src.logging_conf import setup_logging, get_logger  # checks sys.path dir
+from job_pipeline.steps.io_utils import adzuna_save_raw_bronze
 
 log = get_logger(__name__)
 
@@ -49,8 +36,6 @@ if __name__ == "__main__":
     # Force the logger to use the configured "adzuna" logger
     log = get_logger("adzuna")
     log.info("Starting Adzuna ingest...")
-
-################################################################################
 
 
 class AdzunaAPI:
@@ -377,72 +362,6 @@ class AdzunaAPI:
 
         return all_results
 
-    def save_jobs_to_file(
-        self,
-        results: List[Dict[str, Any]],
-        filename: str = None,
-        output_type: str = "parquet",
-    ) -> str:
-        """
-        Saves processed job results to a JSON or Parquet file.
-
-        Args:
-            results: List of job dictionaries to save.
-            filename: Optional custom filename for the saved file.
-            output_type: File format ("json" or "parquet").
-
-        Returns:
-            Path to the saved file.
-
-        Raises:
-            ValueError: If results is not a list or output_type is unsupported
-            IOError: If file writing fails
-        """
-
-        # Input validation
-        if not isinstance(results, list):
-            raise ValueError("Results must be a list of dictionaries")
-
-        if output_type not in ["json", "parquet"]:
-            raise ValueError("output_type must be 'json' or 'parquet'")
-
-        if output_type == "parquet" and not hasattr(pd, "DataFrame"):
-            raise ValueError("pandas is required for parquet output")
-
-        # if no filename is provided, create a default one
-        if not filename:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            if output_type == "json":
-                filename = f"{len(results)}_adzuna_jobs_{timestamp}.json"
-            elif output_type == "parquet":
-                filename = f"{len(results)}_adzuna_jobs_{timestamp}.parquet"
-
-        raw_data_dir = DATA_DIR / "bronze"
-        raw_data_dir.mkdir(parents=True, exist_ok=True)
-        filepath = raw_data_dir / filename
-
-        # save the results to the file
-        try:
-            if output_type == "json":
-                with open(filepath, "w", encoding="utf-8") as f:
-                    json.dump(results, f, indent=2, ensure_ascii=False)
-            elif output_type == "parquet":
-                df = pd.DataFrame(results)
-
-                # Convert problematic columns to strings
-                if "id" in df.columns:
-                    df["id"] = df["id"].astype(str)
-
-                df.to_parquet(filepath)
-
-            print(f"Results saved to {filepath}")
-            return filepath
-
-        except IOError as e:
-            raise IOError(f"Failed to save file {filepath}: {e}")
-        except Exception as e:
-            raise Exception(f"Unexpected error saving file {filepath}: {e}")
-
     def to_df(
         self,
         results: List[Dict[str, Any]],
@@ -461,11 +380,8 @@ def main():
     Main execution block for the Adzuna API client.
     """
     name = "test_page_list"
-    api = AdzunaAPI(os.getenv("ADZUNA_ID"), os.getenv("ADZUNA_KEY"))
+    api = AdzunaAPI(ADZUNA_ID, ADZUNA_KEY)
     config = ADZUNA_API_PRESETS[name]
-
-    # results, page_error_list = api.search_jobs(**config)
-    # log.info(f"Page error list: {page_error_list}")
 
     results, error_list = api.search_jobs_robust(**config)
 
@@ -474,9 +390,8 @@ def main():
 
     results = api.to_df(results)
 
-    results.to_parquet(BRONZE_DIR / (name + ".parquet"))
-
-    log.info(f"Saved results to {BRONZE_DIR / (name + '.parquet')}")
+    file_name = adzuna_save_raw_bronze(results, name)
+    log.info("file_name:", file_name)
 
 
 if __name__ == "__main__":

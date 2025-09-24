@@ -35,30 +35,27 @@ import certifi
 import sys
 from urllib.parse import urlparse
 
-# load environment variables
-load_dotenv()
+from urllib3.util import url
 
-############################## IMORTING AND LOGGING SETUP ################################
 
-# intialize directories
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-
-DATA_DIR = PROJECT_ROOT / "data"
-BRONZE_DIR = DATA_DIR / "bronze"
-SILVER_DIR = DATA_DIR / "silver"
-BRONZE_DIR.mkdir(parents=True, exist_ok=True)
-SILVER_DIR.mkdir(parents=True, exist_ok=True)
-
-LOGS_DIR = PROJECT_ROOT / "logs"
-CERT_PATH = PROJECT_ROOT / "certs" / "BrightData_SSL_certificate_(port 33335).crt"
-
-from src.logging_conf import setup_logging, get_logger
+from job_pipeline.logging_conf import setup_logging, get_logger
+from job_pipeline.config import LOGS_DIR
+from job_pipeline.steps.io_utils import (
+    adzuna_read_raw_bronze,
+    adzuna_save_home_url_silver,
+)
+from job_pipeline.config import (
+    LOGS_DIR,
+    BD_HOST,
+    BD_PASSWORD,
+    BD_PORT,
+    BD_USERNAME_BASE,
+    BD_COUNTRY,
+)
 
 # set up logging
-log = logging.getLogger(__name__)
 
-log = get_logger(__name__)
+log = get_logger("pipeline")
 
 if __name__ == "__main__":
     # if ingestion is run locally
@@ -96,7 +93,6 @@ class HomeUrlProcessor:
         BD_USERNAME_BASE: str,
         BD_PASSWORD: str,
         BD_COUNTRY: str,
-        CERT_PATH: str,
     ) -> None:
         """
         Initialize the HomeUrlProcessor with proxy configuration.
@@ -117,7 +113,6 @@ class HomeUrlProcessor:
         self.BD_USERNAME_BASE = BD_USERNAME_BASE
         self.BD_PASSWORD = BD_PASSWORD
         self.BD_COUNTRY = BD_COUNTRY
-        self.CERT_PATH = CERT_PATH
 
     def add_home_urls(self, jobs: pd.DataFrame, max_workers: int) -> pd.DataFrame:
         """
@@ -284,7 +279,6 @@ class HomeUrlProcessor:
                     "Cache-Control": "max-age=0",
                 }
 
-                certificate = self.CERT_PATH
                 proxies = self._get_proxies()
 
                 response = session.get(
@@ -554,29 +548,26 @@ def main() -> None:
         - Uses 50 concurrent workers for processing
     """
     # load file
-    name = "test_page_list"
-    path = BRONZE_DIR / (name + ".parquet")
-    jobs = pd.read_parquet(path)
+
+    file_name = "adzuna_test_page_list_191306"
+    jobs = adzuna_read_raw_bronze(file_name)
 
     url_processor = HomeUrlProcessor(
-        BD_HOST=os.getenv("BD_HOST"),
-        BD_PORT=int(os.getenv("BD_PORT")),
-        BD_USERNAME_BASE=os.getenv("BD_USERNAME_BASE"),
-        BD_PASSWORD=os.getenv("BD_PASSWORD"),
-        BD_COUNTRY=os.getenv("BD_COUNTRY"),
-        CERT_PATH=CERT_PATH,
+        BD_HOST=BD_HOST,
+        BD_PORT=int(BD_PORT),
+        BD_USERNAME_BASE=BD_USERNAME_BASE,
+        BD_PASSWORD=BD_PASSWORD,
+        BD_COUNTRY=BD_COUNTRY,
     )
 
     # url_jobs = url_processor.add_home_urls(jobs, max_workers=50)
-    url_jobs = url_processor.add_home_urls_robust(jobs, 100, 0.01, 10, True)
+    url_jobs = url_processor.add_home_urls_robust(jobs, 50, 0.01, 10, True)
     url_jobs = url_processor.clean_urls(
         url_jobs, specific_domains=["www.adzuna.co.uk", "www.linkedin.com"]
     )
 
     # save
-    path = SILVER_DIR / (name + "raw_home_url.parquet")
-    url_jobs.to_parquet(path)
-    log.info(f"Saved processed data to {path}")
+    adzuna_save_home_url_silver(url_jobs, file_name)
 
 
 if __name__ == "__main__":
