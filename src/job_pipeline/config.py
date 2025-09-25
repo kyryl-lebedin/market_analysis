@@ -1,92 +1,267 @@
-from dotenv import load_dotenv
+from pydantic import BaseModel, Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
-import os
-
-load_dotenv()
-
-# Project structure
-PROJECT_ROOT = Path(__file__).parent.parent.parent
+from typing import Literal
 
 
-# Data directories - can be overridden by environment variables
-DATA_DIR = Path(os.getenv("DATA_DIR", PROJECT_ROOT / "data"))
-BRONZE_DIR = Path(os.getenv("BRONZE_DIR", DATA_DIR / "bronze"))
-SILVER_DIR = Path(os.getenv("SILVER_DIR", DATA_DIR / "silver"))
-GOLD_DIR = Path(os.getenv("GOLD_DIR", DATA_DIR / "gold"))
-LOGS_DIR = Path(os.getenv("LOGS_DIR", PROJECT_ROOT / "logs"))
-
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-LOG_APP_NAME = os.getenv("LOG_APP_NAME", "pipeline")
-
-BRONZE_DIR.mkdir(parents=True, exist_ok=True)
-SILVER_DIR.mkdir(parents=True, exist_ok=True)
-GOLD_DIR.mkdir(parents=True, exist_ok=True)
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
-
-# API Configuration
-ADZUNA_ID = os.getenv("ADZUNA_ID")
-ADZUNA_KEY = os.getenv("ADZUNA_KEY")
-
-BD_HOST = os.getenv("BD_HOST")
-BD_PORT = os.getenv("BD_PORT")
-BD_USERNAME_BASE = os.getenv("BD_USERNAME_BASE")
-BD_PASSWORD = os.getenv("BD_PASSWORD")
-BD_COUNTRY = os.getenv("BD_COUNTRY")
+#################################### Models #########################################
 
 
-######## ADZUNA API PRESETS ##########
+class Paths(BaseModel):
+    project_root: Path
+    data: Path
+    bronze: Path
+    silver: Path
+    gold: Path
+    logs: Path
 
-what_or_extensive_data = "data scientist,data science,data engineer,data engineering,big data engineer,data platform engineer,data platform,data architect,analytics engineer,data analyst,data analytics,business intelligence,bi analyst,bi developer,data visualization,data visualisation,analytics consultant,data science consultant,etl developer,etl engineer,sql developer,data warehouse engineer,data warehousing,dwh engineer,data modeler,data modeller,data quality engineer,data quality analyst,data governance,data steward,data ops,dataops,streaming data engineer,streaming engineer,kafka engineer,spark engineer,pyspark developer,databricks engineer,snowflake engineer,snowflake developer,dbt developer,machine learning engineer,ml engineer,ai engineer,ai developer,mlops engineer,ml ops,model ops,modelops,ml platform engineer,machine learning platform engineer,ml infrastructure engineer,research engineer,applied scientist,ai scientist,ml scientist,nlp engineer,natural language processing,nlp scientist,computer vision engineer,computer vision,cv engineer,speech recognition,speech engineer,audio ml engineer,deep learning engineer,deep learning,reinforcement learning,recommendation systems engineer,recommender systems,personalization engineer,information retrieval engineer,search engineer,relevance engineer,ranking engineer,generative ai,genai,large language models,llm engineer,llm developer,prompt engineer,prompt engineering,knowledge graph engineer,graph machine learning,quantitative analyst,quant analyst,decision scientist,product data scientist,insights analyst,statistician,time series analyst,forecasting analyst"
-what_or_core_data = "data scientist,data engineer,machine learning,ai"
+    def ensure_dirs(self) -> None:
+        for p in (self.bronze, self.silver, self.gold, self.logs):
+            p.mkdir(parents=True, exist_ok=True)
 
-what_and_680 = "cat, or,and,in,of,it"
-what_and_1417 = "cat,ll"
 
-ADZUNA_API_PRESETS = {
-    "default": dict(
-        country="gb",
-        formated=True,
-        max_workers=3,
-        what_or="python,django",
-    ),
-    "data_scientist_gb": dict(
-        country="gb",
-        formated=True,
-        max_workers=3,
-        what_and="data_scientist",
-        mode="multithreading",
-        scope="all_pages",
-    ),
-    "data_scientist_us": dict(
-        country="us",
-        formated=True,
-        max_workers=3,
-        what_and="data_scientist",
-        mode="multithreading",
-        scope="all_pages",
-    ),
-    "test_multithread_1417": dict(
-        country="gb",
-        formated=True,
-        max_workers=3,
-        scope="all_pages",
-        what_and=what_and_1417,
-        mode="multithreading",
-    ),
-    "test_single_page": dict(
-        country="gb",
-        formated=True,
-        scope="single_page",
-        what_and=what_and_1417,
-        page=6,
-    ),
-    "test_page_list": dict(
-        country="gb",
-        formated=True,
-        scope="page_list",
-        mode="multithreading",
-        max_workers=3,
-        what_and=what_and_1417,
-        page_list=[6, 7, 8, 9, 10],
-    ),
-}
+class LoggingCfg(BaseModel):
+    level: str = "INFO"
+    app_name: str = "job_pipeline"
+
+    @field_validator("level")
+    @classmethod
+    def _validate_level(cls, v: str) -> str:
+        v = v.upper()
+        allowed = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
+        if v not in allowed:
+            raise ValueError(
+                f"Invalid LOG_LEVEL={v!r}. Allowed: {', '.join(sorted(allowed))}"
+            )
+        return v
+
+
+Scope = Literal["single_page", "page_list", "all_pages"]
+Mode = Literal["single_thread", "multithreading"]
+
+
+class Preset(BaseModel):
+    country: str = "gb"
+    formatted: bool = Field(default=True)
+    max_workers: int = 3
+    what_or: str | None = None
+    what_and: str | None = None
+    mode: Mode | None = None
+    scope: Scope | None = None
+    page: int | None = None
+    page_list: list[int] | None = None
+
+
+#########################################################################################
+
+
+class Settings(BaseSettings):
+
+    # called load_dotenv already, so don't bother with .env
+    model_config = SettingsConfigDict(env_file=None, extra="ignore")
+
+    DATA_DIR: Path | None = None
+    BRONZE_DIR: Path | None = None
+    SILVER_DIR: Path | None = None
+    GOLD_DIR: Path | None = None
+    LOGS_DIR: Path | None = None
+
+    LOG_LEVEL: str = "INFO"
+    LOG_APP_NAME: str = "job_pipeline"
+
+    # must set  variables
+    ADZUNA_ID: str
+    ADZUNA_KEY: str
+
+    BD_HOST: str
+    BD_PORT: int
+    BD_USERNAME_BASE: str
+    BD_PASSWORD: str
+    BD_COUNTRY: str
+
+    @property
+    def paths(self) -> Paths:
+        # insurance in case no env root variables
+        project_root = Path(__file__).resolve().parents[2]
+
+        data = (
+            Path(self.DATA_DIR) if self.DATA_DIR else (project_root / "data")
+        )  # use .env or alternatively create in proj root
+        return Paths(
+            project_root=project_root,
+            data=data,
+            # ensure proper roots if none added to .env
+            bronze=Path(self.BRONZE_DIR) if self.BRONZE_DIR else (data / "bronze"),
+            silver=Path(self.SILVER_DIR) if self.SILVER_DIR else (data / "silver"),
+            gold=Path(self.GOLD_DIR) if self.GOLD_DIR else (data / "gold"),
+            logs=Path(self.LOGS_DIR) if self.LOGS_DIR else (project_root / "logs"),
+        )
+
+    @property
+    def logging(self) -> LoggingCfg:
+        return LoggingCfg(level=self.LOG_LEVEL, app_name=self.LOG_APP_NAME)
+
+    @property
+    def adzuna_presets(self) -> dict[str, Preset]:
+        # the code just written as list for convinience but stored as string
+        WHAT_OR_EXTENSIVE_DATA = " ".join(
+            [
+                "data_scientist",
+                "data_science",
+                "data_engineer",
+                "data_engineering",
+                "big_data_engineer",
+                "data_platform_engineer",
+                "data_platform",
+                "data_architect",
+                "analytics_engineer",
+                "data_analyst",
+                "data_analytics",
+                "business_intelligence",
+                "bi_analyst",
+                "bi_developer",
+                "data_visualization",
+                "data_visualisation",
+                "analytics_consultant",
+                "data_science_consultant",
+                "etl_developer",
+                "etl_engineer",
+                "sql_developer",
+                "data_warehouse_engineer",
+                "data_warehousing",
+                "dwh_engineer",
+                "data_modeler",
+                "data_modeller",
+                "data_quality_engineer",
+                "data_quality_analyst",
+                "data_governance",
+                "data_steward",
+                "data_ops",
+                "dataops",
+                "streaming_data_engineer",
+                "streaming_engineer",
+                "kafka_engineer",
+                "spark_engineer",
+                "pyspark_developer",
+                "databricks_engineer",
+                "snowflake_engineer",
+                "snowflake_developer",
+                "dbt_developer",
+                "machine_learning_engineer",
+                "ml_engineer",
+                "ai_engineer",
+                "ai_developer",
+                "mlops_engineer",
+                "ml_ops",
+                "model_ops",
+                "modelops",
+                "ml_platform_engineer",
+                "machine_learning_platform_engineer",
+                "ml_infrastructure_engineer",
+                "research_engineer",
+                "applied_scientist",
+                "ai_scientist",
+                "ml_scientist",
+                "nlp_engineer",
+                "natural_language_processing",
+                "nlp_scientist",
+                "computer_vision_engineer",
+                "computer_vision",
+                "cv_engineer",
+                "speech_recognition",
+                "speech_engineer",
+                "audio_ml_engineer",
+                "deep_learning_engineer",
+                "deep_learning",
+                "reinforcement_learning",
+                "recommendation_systems_engineer",
+                "recommender_systems",
+                "personalization_engineer",
+                "information_retrieval_engineer",
+                "search_engineer",
+                "relevance_engineer",
+                "ranking_engineer",
+                "generative_ai",
+                "genai",
+                "large_language_models",
+                "llm_engineer",
+                "llm_developer",
+                "prompt_engineer",
+                "prompt_engineering",
+                "knowledge_graph_engineer",
+                "graph_machine_learning",
+                "quantitative_analyst",
+                "quant_analyst",
+                "decision_scientist",
+                "product_data_scientist",
+                "insights_analyst",
+                "statistician",
+                "time_series_analyst",
+                "forecasting_analyst",
+            ]
+        )
+        WHAT_OR_CORE_DATA = " ".join(
+            ["data_scientist", "data_engineer", "machine_learning", "ai"]
+        )
+        WHAT_AND_680 = " ".join(["cat", "or", "and", "in", "of", "it"])
+        WHAT_AND_1417 = " ".join(["cat", "ll"])
+
+        return {
+            "default": Preset(
+                country="gb", formatted=True, max_workers=3, what_or="python django"
+            ),
+            "data_scientist_gb": Preset(
+                country="gb",
+                formatted=True,
+                max_workers=3,
+                what_and="data_scientist",
+                mode="multithreading",
+                scope="all_pages",
+            ),
+            "data_scientist_us": Preset(
+                country="us",
+                formatted=True,
+                max_workers=3,
+                what_and="data_scientist",
+                mode="multithreading",
+                scope="all_pages",
+            ),
+            "test_multithread_1417": Preset(
+                country="gb",
+                formatted=True,
+                max_workers=3,
+                scope="all_pages",
+                what_and=WHAT_AND_1417,
+                mode="multithreading",
+            ),
+            "test_single_page": Preset(
+                country="gb",
+                formatted=True,
+                scope="single_page",
+                what_and=WHAT_AND_1417,
+                page=6,
+            ),
+            "test_page_list": Preset(
+                country="gb",
+                formatted=True,
+                scope="page_list",
+                mode="multithreading",
+                max_workers=3,
+                what_and=WHAT_AND_1417,
+                page_list=[6, 7, 8, 9, 10],
+            ),
+            "extensive_or_search_gb": Preset(
+                country="gb",
+                formatted=True,
+                max_workers=3,
+                what_or=WHAT_OR_EXTENSIVE_DATA,
+            ),
+            "core_or_search_gb": Preset(
+                country="gb", formatted=True, max_workers=3, what_or=WHAT_OR_CORE_DATA
+            ),
+        }
+
+
+def get_settings() -> Settings:
+    """factory to import singleton"""
+    return Settings()

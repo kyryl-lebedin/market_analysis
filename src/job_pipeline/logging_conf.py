@@ -1,28 +1,38 @@
+from __future__ import annotations
+
 from pathlib import Path
-from dotenv import load_dotenv
 import logging
 import logging.handlers
-from job_pipeline.config import LOGS_DIR, LOG_LEVEL, LOG_APP_NAME
 
 
 def setup_logging(
-    app_name: str = None,
-    log_dir: Path = None,
-    level: str = None,
+    log_dir: Path,
+    app_name: str | None = None,
+    level: str | int | None = None,
     keep_days: int = 7,
-):
-    name = app_name or LOG_APP_NAME
-    lvl = getattr(logging, (level or LOG_LEVEL).upper(), logging.INFO)
-    dir_ = log_dir or LOGS_DIR
+) -> logging.Logger:
+    """
+    Configure TimedRotating file + console logging.
+    You MUST pass app_name/log_dir/level from your runtime settings (CLI or app init).
+    If you pass None, sensible fallbacks are used.
+    """
+    name = app_name or "job_pipeline"
+    # accept "INFO" or logging.INFO
+    if isinstance(level, int):
+        lvl = level
+    else:
+        lvl = getattr(logging, (level or "INFO").upper(), logging.INFO)
+
+    dir_ = Path(log_dir)
 
     logger = logging.getLogger(name)
 
     if logger.handlers:
-        # Already configured; still align level if caller passed a different one
+        # Already configured; align level if caller changed it
         logger.setLevel(lvl)
         return logger
 
-    dir_.mkdir(parents=True, exist_ok=True)  # leave for protection
+    dir_.mkdir(parents=True, exist_ok=True)
 
     logger.setLevel(lvl)
 
@@ -58,6 +68,6 @@ def setup_logging(
 def get_logger(name: str) -> logging.Logger:
     """
     Get a module-level logger that inherits from the configured app logger.
-    Call setup_logging() once in your __main__ before doing work.
+    Call setup_logging() once in your CLI (__main__) before doing work.
     """
     return logging.getLogger(name)

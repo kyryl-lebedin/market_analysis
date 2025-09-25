@@ -1,34 +1,17 @@
-from multiprocessing import process
-from pathlib import Path
-from dotenv import load_dotenv
-import logging
 import pandas as pd
-from typing import List, Optional, Dict
+from typing import Optional, Dict
 from concurrent.futures import ThreadPoolExecutor
 from bs4 import BeautifulSoup
 from html import unescape
 import json
 import requests
 import certifi
-import os
 import uuid
 from urllib.parse import urlparse
-import sys
 
 
-from job_pipeline.logging_conf import get_logger, setup_logging
-from job_pipeline.config import (
-    LOGS_DIR,
-    BD_HOST,
-    BD_PASSWORD,
-    BD_PORT,
-    BD_USERNAME_BASE,
-    BD_COUNTRY,
-)
-from job_pipeline.steps.io_utils import (
-    adzuna_read_home_url_silver,
-    adzuna_save_full_description_gold,
-)
+from job_pipeline.logging_conf import get_logger
+
 
 # set up logging
 
@@ -273,34 +256,3 @@ class FullDescriptionProcessor:
 
         # If everything fails
         return ""
-
-
-def main():
-    description_processor = FullDescriptionProcessor(
-        BD_HOST=BD_HOST,
-        BD_PORT=int(BD_PORT),
-        BD_USERNAME_BASE=BD_USERNAME_BASE,
-        BD_PASSWORD=BD_PASSWORD,
-        BD_COUNTRY=BD_COUNTRY,
-    )
-
-    file_name = "adzuna_test_page_list_191306"
-
-    df = adzuna_read_home_url_silver(file_name)
-
-    descriptions = description_processor.add_full_descriptions_robust(
-        df,
-        max_workers=50,
-        acceptable_fault_rate=0.01,
-        max_tries=5,
-        initial_process=True,
-    )  # Add copy=True here
-
-    adzuna_save_full_description_gold(descriptions, file_name)
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        log.error(f"Error: {e}")

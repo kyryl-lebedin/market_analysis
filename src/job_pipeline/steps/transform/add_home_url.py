@@ -22,36 +22,16 @@ Functions:
 """
 
 from concurrent.futures import ThreadPoolExecutor
-import logging
-from pathlib import Path
 import pandas as pd
-import os
-from dotenv import load_dotenv
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Optional
 import requests
 import uuid
 import re
 import certifi
-import sys
 from urllib.parse import urlparse
 
-from urllib3.util import url
 
-
-from job_pipeline.logging_conf import setup_logging, get_logger
-from job_pipeline.config import LOGS_DIR
-from job_pipeline.steps.io_utils import (
-    adzuna_read_raw_bronze,
-    adzuna_save_home_url_silver,
-)
-from job_pipeline.config import (
-    LOGS_DIR,
-    BD_HOST,
-    BD_PASSWORD,
-    BD_PORT,
-    BD_USERNAME_BASE,
-    BD_COUNTRY,
-)
+from job_pipeline.logging_conf import get_logger
 
 
 log = get_logger(__name__)
@@ -128,9 +108,7 @@ class HomeUrlProcessor:
             Exception: For unexpected errors during batch processing
 
         Note:
-            - Processing is done in batches to manage memory usage
-            - Interrupted processing will fill remaining URLs with None
-            - Progress is logged for each batch completion
+            - Processing is done in batches to manage memory and avoid overwhelming target servers
 
         """
 
@@ -325,7 +303,7 @@ class HomeUrlProcessor:
                                 return js_location_match.group(1)
 
                         except Exception as e:
-                            print(f"Error processing click.appcast redirect: {e}")
+                            log.error(f"Error processing click.appcast redirect: {e}")
                             return "either blocked or something else (license)"
 
                     return redirect_url
@@ -353,9 +331,8 @@ class HomeUrlProcessor:
                     # most likely
                     return "either blocked or something else (license)"
 
-            # we don't really know the error behaviour, so will build up something, to catch ban and non found
             except Exception as e:
-                print(f"Error trying to obtain home url for {redirect_url}: {e}")
+                log.error(f"Error trying to obtain home url for {redirect_url}: {e}")
                 return None
 
         else:
@@ -400,7 +377,8 @@ class HomeUrlProcessor:
         try:
             parsed = urlparse(str(url))
             return parsed.netloc
-        except:
+        except Exception:
+            log.error(f"Error extracting domain from {url}")
             return None
 
     def unique_domains(self, df: pd.DataFrame, log_results: bool = True) -> pd.Series:
@@ -507,63 +485,3 @@ class HomeUrlProcessor:
         log.info("URLs stripped")
 
         return df
-
-
-def main() -> None:
-    """
-    Main execution function for processing job URLs.
-
-    This function orchestrates the complete workflow:
-    1. Loads job data from a parquet file
-    2. Initializes the HomeUrlProcessor with environment variables
-    3. Processes URLs to extract home URLs
-    4. Saves the results to a new parquet file
-
-    The function reads configuration from environment variables and processes
-    a file named "failed_once.parquet" from the raw data directory.
-
-    Environment Variables Required:
-        BD_HOST: BrightData proxy host
-        BD_PORT: BrightData proxy port
-        BD_USERNAME_BASE: Proxy username base
-        BD_PASSWORD: Proxy password
-        BD_COUNTRY: Proxy country code
-
-    Raises:
-        FileNotFoundError: If the input parquet file doesn't exist
-        KeyError: If required environment variables are missing
-        Exception: For other processing errors
-
-    Note:
-        - Input file: data/raw/failed_once.parquet
-        - Output file: data/url/failed_once_home_url.parquet
-        - Uses 50 concurrent workers for processing
-    """
-    # load file
-
-    file_name = "adzuna_test_page_list_191306"
-    jobs = adzuna_read_raw_bronze(file_name)
-
-    url_processor = HomeUrlProcessor(
-        BD_HOST=BD_HOST,
-        BD_PORT=int(BD_PORT),
-        BD_USERNAME_BASE=BD_USERNAME_BASE,
-        BD_PASSWORD=BD_PASSWORD,
-        BD_COUNTRY=BD_COUNTRY,
-    )
-
-    # url_jobs = url_processor.add_home_urls(jobs, max_workers=50)
-    url_jobs = url_processor.add_home_urls_robust(jobs, 50, 0.01, 10, True)
-    url_jobs = url_processor.clean_urls(
-        url_jobs, specific_domains=["www.adzuna.co.uk", "www.linkedin.com"]
-    )
-
-    # save
-    adzuna_save_home_url_silver(url_jobs, file_name)
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        log.error(f"Error: {e}")

@@ -2,7 +2,7 @@
 name = "job-pipeline"
 version = "0.1.0"
 description = "ETL pipeline for job data (Adzuna → bronze/silver/gold)"
-authors = ["Kyryl kyryllebedin@gmail.com"]
+authors = ["Kyryl <kyryllebedin@gmail.com>"]
 readme = "README.md"
 packages = [{ include = "job_pipeline", from = "src" }]
 
@@ -36,6 +36,8 @@ tzdata = "2025.2"
 urllib3 = "2.5.0"
 yarl = "1.20.1"
 typer = "^0.19.1"
+pydantic = "^2.11.9"
+pydantic-settings = "^2.11.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
@@ -43,8 +45,7 @@ ruff = "^0.6"
 ipykernel = "^6.29"
 
 [tool.poetry.scripts]
-# This exposes a `job-pipeline` command
-job-pipeline = "job_pipeline.cli:app"
+job-pipeline = "job_pipeline.cli:main"
 
 [build-system]
 requires = ["poetry-core"]
