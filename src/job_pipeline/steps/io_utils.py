@@ -1,13 +1,11 @@
-import logging
-from pathlib import Path
+from __future__ import annotations
+
+
 from datetime import datetime
 import pandas as pd
-import sys
 
 
-from job_pipeline.config import GOLD_DIR, BRONZE_DIR, SILVER_DIR, LOGS_DIR
-
-
+from job_pipeline.config import Settings
 from job_pipeline.logging_conf import get_logger
 
 
@@ -15,21 +13,21 @@ log = get_logger(__name__)
 
 
 # creates unique name for dataset that would be used later as main part of naming
-def adzuna_save_raw_bronze(df: pd.DataFrame, name: str) -> str:
+def adzuna_save_raw_bronze(df: pd.DataFrame, name: str, settings: Settings) -> str:
     """name - unique identifier"""
 
     file_name = f"adzuna_{name}_{datetime.now().strftime('%H%M%S')}"
 
-    output = BRONZE_DIR / (file_name + "_raw.parquet")
+    output = settings.paths.bronze / (file_name + "_raw.parquet")
 
     df.to_parquet(output)
     log.info(f"{len(df)} jobs are fetched from adzuna and saved in {output}")
     return file_name
 
 
-def adzuna_read_raw_bronze(file_name: str) -> pd.DataFrame:
+def adzuna_read_raw_bronze(file_name: str, settings: Settings) -> pd.DataFrame:
 
-    path = BRONZE_DIR / (file_name + "_raw.parquet")
+    path = settings.paths.bronze / (file_name + "_raw.parquet")
 
     df = pd.read_parquet(path)
 
@@ -37,10 +35,12 @@ def adzuna_read_raw_bronze(file_name: str) -> pd.DataFrame:
     return df
 
 
-def adzuna_save_home_url_silver(df: pd.DataFrame, file_name: str) -> None:
+def adzuna_save_home_url_silver(
+    df: pd.DataFrame, file_name: str, settings: Settings
+) -> None:
     """filename - passed from prev"""
 
-    output = SILVER_DIR / (file_name + "_home_url.parquet")
+    output = settings.paths.silver / (file_name + "_home_url.parquet")
 
     df.to_parquet(output)
 
@@ -48,10 +48,10 @@ def adzuna_save_home_url_silver(df: pd.DataFrame, file_name: str) -> None:
     return None
 
 
-def adzuna_read_home_url_silver(file_name: str) -> pd.DataFrame:
+def adzuna_read_home_url_silver(file_name: str, settings: Settings) -> pd.DataFrame:
     """filename - passed from prev"""
 
-    path = SILVER_DIR / (file_name + "_home_url.parquet")
+    path = settings.paths.silver / (file_name + "_home_url.parquet")
 
     df = pd.read_parquet(path)
 
@@ -59,10 +59,12 @@ def adzuna_read_home_url_silver(file_name: str) -> pd.DataFrame:
     return df
 
 
-def adzuna_save_full_description_gold(df: pd.DataFrame, file_name: str) -> None:
+def adzuna_save_full_description_gold(
+    df: pd.DataFrame, file_name: str, settings: Settings
+) -> None:
     """filename - passed from prev"""
 
-    output = GOLD_DIR / (file_name + "_full_description.parquet")
+    output = settings.paths.gold / (file_name + "_full_description.parquet")
 
     df.to_parquet(output)
 
