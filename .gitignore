@@ -5,6 +5,7 @@
 /certs/
 *.pyc
 /logs
+.vscode/
 
 # git config core.excludesfile .gitignore.local
 .gitignore.local
