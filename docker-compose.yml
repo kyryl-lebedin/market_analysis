@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  job-pipeline:
+    build: .
+    container_name: market-analysis-pipeline
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    command: ["python", "-m", "job_pipeline.cli", "--preset", "test_page_list", "--name", "docker_test"]
