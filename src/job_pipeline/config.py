@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 from typing import Literal
+import boto3
+from botocore.client import BaseClient
 
 
 #################################### Models #########################################
@@ -18,6 +20,33 @@ class Paths(BaseModel):
     def ensure_dirs(self) -> None:
         for p in (self.bronze, self.silver, self.gold, self.logs):
             p.mkdir(parents=True, exist_ok=True)
+
+
+class S3Config(BaseModel):
+    """S3 configuration for cloud storage"""
+
+    bucket_name: str
+    region: str = "us-east-1"
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+
+    def get_s3_client(self) -> BaseClient:
+        """Create and return S3 client with this configuration"""
+
+        # Create S3 client with optional credentials
+        client_kwargs = {
+            "region_name": self.region,
+        }
+
+        if self.aws_access_key_id and self.aws_secret_access_key:
+            client_kwargs.update(
+                {
+                    "aws_access_key_id": self.aws_access_key_id,
+                    "aws_secret_access_key": self.aws_secret_access_key,
+                }
+            )
+
+        return boto3.client("s3", **client_kwargs)
 
 
 class LoggingCfg(BaseModel):
@@ -69,6 +98,15 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_APP_NAME: str = "job_pipeline"
 
+    # Storage configuration
+    USE_S3: bool = False  # Set to True to use S3 instead of local storage
+
+    # S3 Configuration (only used when USE_S3=True)
+    S3_BUCKET_NAME: str | None = None
+    S3_REGION: str = "us-east-1"
+    AWS_ACCESS_KEY_ID: str | None = None
+    AWS_SECRET_ACCESS_KEY: str | None = None
+
     # must set  variables
     ADZUNA_ID: str
     ADZUNA_KEY: str
@@ -78,6 +116,9 @@ class Settings(BaseSettings):
     BD_USERNAME_BASE: str
     BD_PASSWORD: str
     BD_COUNTRY: str
+
+    # Singleton S3 client
+    _s3_client: BaseClient | None = None
 
     @property
     def paths(self) -> Paths:
@@ -96,6 +137,36 @@ class Settings(BaseSettings):
             gold=Path(self.GOLD_DIR) if self.GOLD_DIR else (data / "gold"),
             logs=Path(self.LOGS_DIR) if self.LOGS_DIR else (project_root / "logs"),
         )
+
+    @property
+    def s3_config(self) -> S3Config | None:
+        """Get S3 configuration if USE_S3 is True"""
+        if not self.USE_S3:
+            return None
+
+        if not self.S3_BUCKET_NAME:
+            raise ValueError("S3_BUCKET_NAME must be set when USE_S3=True")
+
+        return S3Config(
+            bucket_name=self.S3_BUCKET_NAME,
+            region=self.S3_REGION,
+            aws_access_key_id=self.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=self.AWS_SECRET_ACCESS_KEY,
+        )
+
+    @property
+    def s3_client(self) -> BaseClient:
+        """Get singleton S3 client"""
+        if not self.USE_S3:
+            raise ValueError("S3 is not enabled. Set USE_S3=true to use S3 storage.")
+
+        if self._s3_client is None:
+            s3_config = self.s3_config
+            if not s3_config:
+                raise ValueError("S3 config not available")
+            self._s3_client = s3_config.get_s3_client()
+
+        return self._s3_client
 
     @property
     def logging(self) -> LoggingCfg:
