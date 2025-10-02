@@ -7,17 +7,10 @@ services:
     container_name: market-analysis-test
     env_file:
       - .env
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    # Example: Use environment variables for configuration
     environment:
-      # Override these in .env or set directly here for on-demand runs
-      # PIPELINE_PRESET: "data_scientist_gb"
-      # PIPELINE_RUN_NAME: "scheduled_run_$(date +%Y%m%d_%H%M%S)"
-      # PIPELINE_CONCURRENCY: 50
-      # PIPELINE_SEARCH_KWARGS: '{"country":"gb","what_and":"python","scope":"single_page","page":1}'
-    # Default command - can be overridden via environment variables
-    command: ["python", "-m", "job_pipeline.cli"]
+      # Only AWS credentials needed for secrets fetch
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    command: ["--preset", "test_page_list", "--name", "test_run"]
 
 

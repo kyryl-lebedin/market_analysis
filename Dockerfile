@@ -1,24 +1,29 @@
-FROM python:3.12-slim
+# Build stage
+FROM python:3.12-slim as builder
+WORKDIR /app
+COPY pyproject.toml poetry.lock ./
+RUN pip install poetry poetry-plugin-export && \
+    poetry export --only=main --format=requirements.txt --output=requirements.txt
 
+# Runtime stage
+FROM python:3.12-slim
 WORKDIR /app
 
-
-# Install Poetry
-RUN pip install poetry
-RUN poetry config virtualenvs.create false
-
-# Copy Poetry files
-COPY pyproject.toml poetry.lock ./
-RUN poetry install --only=main --no-root
+# Install dependencies directly
+COPY --from=builder /app/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY src/ ./src/
-COPY README.md ./
 
-# Create necessary directories
-RUN mkdir -p data/bronze data/silver data/gold logs
+# Set environment
+ENV PYTHONPATH="/app/src"
 
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash app && \
+    chown -R app:app /app
+USER app
 
-
-# Default command
-CMD ["python", "-m", "job_pipeline.cli", "--help"]
+# Set entrypoint
+ENTRYPOINT ["python", "-m", "job_pipeline.cli"]
+CMD ["--help"]
