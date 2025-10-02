@@ -52,6 +52,7 @@ class S3Config(BaseModel):
 class LoggingCfg(BaseModel):
     level: str = "INFO"
     app_name: str = "job_pipeline"
+    disable_file_logging: bool = False
 
     @field_validator("level")
     @classmethod
@@ -97,6 +98,13 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "INFO"
     LOG_APP_NAME: str = "job_pipeline"
+    DISABLE_FILE_LOGGING: bool = False
+
+    # Pipeline runtime configuration via environment variables
+    PIPELINE_PRESET: str | None = None
+    PIPELINE_RUN_NAME: str | None = None
+    PIPELINE_SEARCH_KWARGS: str | None = None  # JSON string
+    PIPELINE_CONCURRENCY: int | None = None  # max_workers for concurrency
 
     # Storage configuration
     USE_S3: bool = False  # Set to True to use S3 instead of local storage
@@ -170,7 +178,11 @@ class Settings(BaseSettings):
 
     @property
     def logging(self) -> LoggingCfg:
-        return LoggingCfg(level=self.LOG_LEVEL, app_name=self.LOG_APP_NAME)
+        return LoggingCfg(
+            level=self.LOG_LEVEL,
+            app_name=self.LOG_APP_NAME,
+            disable_file_logging=self.DISABLE_FILE_LOGGING,
+        )
 
     @property
     def adzuna_presets(self) -> dict[str, Preset]:

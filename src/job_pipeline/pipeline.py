@@ -28,19 +28,23 @@ def run_pipeline(
     preset_name: str | None = "test_page_list",
     run_name: str = "test1",
     search_kwargs: Mapping[str, Any] | None = None,
+    concurrency: int | None = None,
 ):
     # Examples:
     # job_pipeline --preset data_scientist_gb --name ds_search
     # job_pipeline --kwargs '{"country":"gb","what_and":"python","scope":"single_page","page":1}' --name python_jobs
 
     log.info(
-        f"Starting pipeline… run_name={run_name} preset={preset_name} uses_raw_kwargs={bool(search_kwargs)}"
+        f"Starting pipeline… run_name={run_name} preset={preset_name} uses_raw_kwargs={bool(search_kwargs)} concurrency={concurrency}"
     )
 
     #######################
 
     if search_kwargs:
         adzuna_kwargs = dict(search_kwargs)
+        # Override max_workers if concurrency is specified
+        if concurrency is not None:
+            adzuna_kwargs["max_workers"] = concurrency
     else:
         # if no explicit arguments, run with preset
         presets = settings.adzuna_presets
@@ -50,6 +54,10 @@ def run_pipeline(
             )
         preset = presets[preset_name]
         adzuna_kwargs = preset.model_dump(by_alias=True, exclude_none=True)
+
+        # Override max_workers if concurrency is specified
+        if concurrency is not None:
+            adzuna_kwargs["max_workers"] = concurrency
 
     for k in ("what_or", "what_and"):
         if isinstance(adzuna_kwargs.get(k), list):
@@ -80,7 +88,9 @@ def run_pipeline(
         BD_COUNTRY=settings.BD_COUNTRY,
     )
 
-    url_jobs = url_processor.add_home_urls_robust(jobs, 100, 0.01, 10, True)
+    # Use concurrency setting for URL processing if available, otherwise default to 100
+    url_concurrency = concurrency or 100
+    url_jobs = url_processor.add_home_urls_robust(jobs, url_concurrency, 0.01, 10, True)
     url_jobs = url_processor.clean_urls(
         url_jobs, specific_domains=["www.adzuna.co.uk", "www.linkedin.com"]
     )
@@ -98,9 +108,11 @@ def run_pipeline(
         BD_COUNTRY=settings.BD_COUNTRY,
     )
 
+    # Use concurrency setting for description processing if available, otherwise default to 100
+    desc_concurrency = concurrency or 100
     descriptions = description_processor.add_full_descriptions_robust(
         url_jobs,
-        max_workers=100,
+        max_workers=desc_concurrency,
         acceptable_fault_rate=0.01,
         max_tries=5,
         initial_process=True,

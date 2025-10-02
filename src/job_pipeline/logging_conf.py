@@ -9,12 +9,16 @@ def setup_logging(
     log_dir: Path,
     app_name: str | None = None,
     level: str | int | None = None,
-    keep_days: int = 7,
+    keep_days: int = 7,  # This parameter is now unused but kept for compatibility
+    disable_file_logging: bool = False,
 ) -> logging.Logger:
     """
-    Configure TimedRotating file + console logging.
+    Configure file + console logging.
     You MUST pass app_name/log_dir/level from your runtime settings (CLI or app init).
     If you pass None, sensible fallbacks are used.
+
+    Args:
+        disable_file_logging: If True, only console logging will be enabled (useful for ECS/CloudWatch)
     """
     name = app_name or "job_pipeline"
     # accept "INFO" or logging.INFO
@@ -32,7 +36,9 @@ def setup_logging(
         logger.setLevel(lvl)
         return logger
 
-    dir_.mkdir(parents=True, exist_ok=True)
+    # Only create log directory if file logging is enabled
+    if not disable_file_logging:
+        dir_.mkdir(parents=True, exist_ok=True)
 
     logger.setLevel(lvl)
 
@@ -41,21 +47,18 @@ def setup_logging(
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # File handler: rotate daily, keep N days
-    fh = logging.handlers.TimedRotatingFileHandler(
-        filename=dir_ / f"{name}.log",
-        when="D",
-        interval=1,
-        backupCount=keep_days,
-        encoding="utf-8",
-    )
-    fh.setFormatter(fmt)
+    # File handler: only add if file logging is not disabled
+    if not disable_file_logging:
+        fh = logging.FileHandler(
+            filename=dir_ / f"{name}.log",
+            encoding="utf-8",
+        )
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
 
-    # Console handler
+    # Console handler (always enabled)
     ch = logging.StreamHandler()
     ch.setFormatter(fmt)
-
-    logger.addHandler(fh)
     logger.addHandler(ch)
 
     # quiet noisy libs a bit

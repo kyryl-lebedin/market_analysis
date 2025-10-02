@@ -3,10 +3,21 @@ version: '3.8'
 services:
   job-pipeline:
     build: .
-    container_name: market-analysis-pipeline
+    image: market-analysis:latest
+    container_name: market-analysis-test
     env_file:
       - .env
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-    command: ["python", "-m", "job_pipeline.cli", "--preset", "test_page_list", "--name", "docker_test"]
+    # Example: Use environment variables for configuration
+    environment:
+      # Override these in .env or set directly here for on-demand runs
+      # PIPELINE_PRESET: "data_scientist_gb"
+      # PIPELINE_RUN_NAME: "scheduled_run_$(date +%Y%m%d_%H%M%S)"
+      # PIPELINE_CONCURRENCY: 50
+      # PIPELINE_SEARCH_KWARGS: '{"country":"gb","what_and":"python","scope":"single_page","page":1}'
+    # Default command - can be overridden via environment variables
+    command: ["python", "-m", "job_pipeline.cli"]
+
+
