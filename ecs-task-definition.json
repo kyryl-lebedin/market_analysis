@@ -1,0 +1,76 @@
+{
+  "family": "market-analysis-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::344776058438:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::344776058438:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "market-analysis-container",
+      "image": "344776058438.dkr.ecr.eu-west-2.amazonaws.com/market-analysis:latest",
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/market-analysis",
+          "awslogs-region": "eu-west-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "environment": [
+        {
+          "name": "USE_S3",
+          "value": "true"
+        },
+        {
+          "name": "S3_BUCKET_NAME",
+          "value": "job-analysis-test"
+        },
+        {
+          "name": "S3_REGION",
+          "value": "eu-west-2"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "eu-west-2"
+        },
+        {
+          "name": "AWS_SECRETS_NAME",
+          "value": "job-pipeline/secrets"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "INFO"
+        },
+        {
+          "name": "LOG_APP_NAME",
+          "value": "job_pipeline"
+        },
+        {
+          "name": "DISABLE_FILE_LOGGING",
+          "value": "true"
+        },
+        {
+          "name": "BD_HOST",
+          "value": "brd.superproxy.io"
+        },
+        {
+          "name": "BD_PORT",
+          "value": "33335"
+        },
+        {
+          "name": "BD_COUNTRY",
+          "value": "gb"
+        }
+      ],
+      "command": [
+        "--preset",
+        "test_page_list",
+        "--name",
+        "ecs_run"
+      ]
+    }
+  ]
+}

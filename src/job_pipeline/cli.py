@@ -12,6 +12,11 @@ from job_pipeline.logging_conf import setup_logging
 from job_pipeline.pipeline import run_pipeline
 from job_pipeline.secrets import load_secrets_to_env
 
+# docker compose run job-pipeline --kwargs '{"country":"gb","what_and":"python","scope":"page_list","page_list":[3,7,12, 13, 14, 15],"mode":"multithreading","max_workers":100,"formatted":true}' --name python_dev_3pages
+
+# Quick custom search template - just replace the kwargs and run_name:
+# aws ecs run-task --cluster market-analysis-cluster --task-definition market-analysis-task --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[subnet-071838b9ab2d4148f],assignPublicIp=ENABLED}" --overrides '{"containerOverrides":[{"name":"market-analysis-container","command":["--kwargs","{\"country\":\"gb\",\"what_and\":\"data_scientist\",\"scope\":\"page_list\",\"page_list\":[1,2,3]}","--name","my_custom_run"]}]}' --region eu-west-2
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
