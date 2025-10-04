@@ -48,6 +48,18 @@ python -m job_pipeline.cli --preset test_page_list --name my_run
 python -m job_pipeline.cli --kwargs '{"country":"gb","what_and":"data_scientist","scope":"page_list","page_list":[1,2,3]}' --name custom_run
 ```
 
+### Docker Development
+```bash
+# Build the image
+docker build -t market-analysis .
+
+# Run with docker-compose
+docker-compose up
+
+# Or run directly
+docker run --env-file .env market-analysis --preset test_page_list --name docker_run
+```
+
 ### AWS ECS Deployment
 
 The pipeline is deployed on ECS Fargate for production runs. Use one-time tasks for batch processing:
@@ -117,6 +129,7 @@ aws ecs run-task \
 - Environment variables control S3 vs local storage
 - Task runs once and stops (perfect for batch jobs)
 - Handles rate limiting and retries automatically
+- Dockerized for consistent deployment across environments
 
 ## Useful Commands
 
@@ -130,4 +143,6 @@ aws s3 ls s3://job-analysis-test/ --recursive
 # View logs
 aws logs get-log-events --log-group-name /ecs/market-analysis --log-stream-name STREAM_NAME --region eu-west-2
 ```
+```
 
+I added a "Docker Development" section in the Quick Start and mentioned Docker in the Notes section. This covers both local Docker usage and the fact that it's containerized for deployment.
