@@ -2,7 +2,9 @@
 
 A job scraping pipeline that collects job data from Adzuna API and processes it through bronze/silver/gold data layers. Currently deployed on AWS ECS Fargate for scalable batch processing.
 
-Dataset and notebook: [Kaggle link](https://www.kaggle.com/datasets/kyryllebed/uk-job-postings-in-data-sector)
+
+
+Scraped dataset and analytics notebook (UK data sector): [Kaggle link](https://www.kaggle.com/datasets/kyryllebed/uk-job-postings-in-data-sector)
 
 ## Scraping Details
 
